@@ -1,0 +1,32 @@
+services:
+  cloud:
+    build: .
+    image: twitchpc-cloud:latest
+    container_name: twitchpc-cloud
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: ${PORT:-3000}
+      DB_PATH: /data/twitchpc.db
+      ADMIN_TOKEN_FILE: /data/admin-token.txt
+      LOG_DIR: /data/logs
+      RELEASE_DIR: /app/release
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - twitchpc-data:/data
+      # Serves standalone agent builds from /download/ on the cloud.
+      - ./release:/app/release:ro
+    healthcheck:
+      test: ["CMD", "node", "scripts/docker-healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 10s
+
+volumes:
+  twitchpc-data:

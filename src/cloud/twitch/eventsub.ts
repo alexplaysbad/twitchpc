@@ -219,13 +219,16 @@ export class EventSubClient {
     this.syncing = true;
     try {
       const appToken = await this.tokens.appToken();
+      // WebSocket subscriptions belong to the authorizing user. App tokens
+      // cannot see or delete them, so reconcile with the same user token used
+      // to create them.
       let accessToken = await this.tokens.userToken() ?? appToken;
       const saved = listEventSubSubscriptions(this.db);
 
       for (const type of TOPICS) {
         const existing = saved.find((entry) => entry.type === type);
         if (existing?.subscriptionId) {
-          const valid = await this.subscriptionIsValid(existing.subscriptionId, sessionId, appToken);
+          const valid = await this.subscriptionIsValid(existing.subscriptionId, sessionId, accessToken);
           if (valid) {
             saveEventSubSubscription(this.db, {
               ...existing,
@@ -237,7 +240,7 @@ export class EventSubClient {
           }
           this.log(`EventSub subscription for ${type} is stale; recreating`);
           deleteEventSubSubscription(this.db, type);
-          await this.deleteSubscription(existing.subscriptionId, appToken);
+          await this.deleteSubscription(existing.subscriptionId, accessToken);
         }
 
         let result = await this.subscribe(type, sessionId, accessToken);
@@ -275,8 +278,8 @@ export class EventSubClient {
     }
   }
 
-  private async subscriptionIsValid(id: string, sessionId: string, appToken: string): Promise<boolean> {
-    const result = await this.helix('GET', `${HELIX_SUBSCRIPTIONS}?id=${encodeURIComponent(id)}`, appToken);
+  private async subscriptionIsValid(id: string, sessionId: string, token: string): Promise<boolean> {
+    const result = await this.helix('GET', `${HELIX_SUBSCRIPTIONS}?id=${encodeURIComponent(id)}`, token);
     if (!result.ok) return false;
     const subscription = dataEntries(result.body)[0];
     if (!subscription) return false;
@@ -286,9 +289,9 @@ export class EventSubClient {
       String(transport['session_id'] ?? '') === sessionId;
   }
 
-  private async deleteSubscription(id: string, appToken: string): Promise<void> {
+  private async deleteSubscription(id: string, token: string): Promise<void> {
     try {
-      await this.helix('DELETE', `${HELIX_SUBSCRIPTIONS}?id=${encodeURIComponent(id)}`, appToken);
+      await this.helix('DELETE', `${HELIX_SUBSCRIPTIONS}?id=${encodeURIComponent(id)}`, token);
     } catch (error) {
       this.log(`Could not delete stale EventSub subscription ${id}: ${error instanceof Error ? error.message : String(error)}`);
     }

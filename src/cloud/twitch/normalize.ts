@@ -53,12 +53,18 @@ export function normalizeEventSubNotification(
   message: UnknownRecord,
   broadcaster: BroadcasterIdentity
 ): TwitchEvent | undefined {
-  if (message['subscription'] === undefined) return undefined;
-  const subscription = record(message['subscription']);
+  // EventSub WebSocket notifications wrap the subscription and event in
+  // `payload`. Accept a bare payload as well for simple/internal callers.
+  const payload = record(message['payload']);
+  const body = payload['subscription'] !== undefined || payload['event'] !== undefined
+    ? payload
+    : message;
+  if (body['subscription'] === undefined) return undefined;
+  const subscription = record(body['subscription']);
   const type = SUBSCRIPTION_TYPES[str(subscription['type'])];
   if (type === undefined) return undefined;
 
-  const event = record(message['event']);
+  const event = record(body['event']);
   const common = base(message, event, broadcaster);
 
   switch (type) {

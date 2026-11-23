@@ -26,6 +26,48 @@ Open the test UI at `http://localhost:3000/ui/`. It has a form-based automation 
 For development: `npm run dev:cloud` / `npm run dev:agent` (auto-reload via `tsx watch`).
 Run tests with `npm test`.
 
+## Docker (cloud control plane)
+
+The image runs the **cloud only**. The Windows agent still runs on the streamer's PC (as the standalone `.exe`) and connects outbound to the published TCP port.
+
+```powershell
+copy .env.example .env
+# fill in the Twitch settings; PORT defaults to 3000
+npm run docker:build
+npm run docker:up
+npm run docker:logs
+```
+
+Compose publishes `${PORT:-3000}` on the host, binds the cloud to `0.0.0.0` inside the container, and stores the SQLite DB, generated admin token and logs in the `twitchpc-data` named volume. It also mounts `./release` read-only so `/download/twitchpc-agent.exe` and `version.json` serve your latest agent build.
+
+Open `http://localhost:<PORT>/ui/`. If `ADMIN_TOKEN` is empty, the token is generated on first start at `/data/admin-token.txt` inside the container:
+
+```powershell
+docker compose exec cloud cat /data/admin-token.txt
+```
+
+Or set `ADMIN_TOKEN` explicitly in `.env`. Stop with `npm run docker:down`; state survives restarts. Use `docker compose down -v` to delete it.
+
+To run without Compose:
+
+```bash
+docker build -t twitchpc-cloud .
+docker run -d --name twitchpc-cloud --restart unless-stopped \
+  -p 2559:2559 \
+  --env-file .env \
+  -e HOST=0.0.0.0 -e PORT=2559 \
+  -e DB_PATH=/data/twitchpc.db \
+  -e ADMIN_TOKEN_FILE=/data/admin-token.txt \
+  -e LOG_DIR=/data/logs \
+  -v twitchpc-data:/data \
+  -v "$PWD/release:/app/release:ro" \
+  twitchpc-cloud
+```
+
+If you use Tailscale Serve on the Docker host, restrict the published port to loopback by changing the Compose mapping to `"127.0.0.1:${PORT:-3000}:${PORT:-3000}"`; `tailscale serve --bg <PORT>` can then proxy to it. Keep `HOST=0.0.0.0` inside the container.
+
+> The agent cannot run in this Linux image: hotkeys, OBS WebSocket and the tray app are Windows-specific. Run `TwitchPC Agent.exe` on the PC and point `CLOUD_URL` at the Docker host.
+
 ## Standalone agent .exe (no Node needed on the streamer's PC)
 
 On a Windows machine with Node installed:

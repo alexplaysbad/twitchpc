@@ -24,6 +24,30 @@ jobs:
       - run: npm test
       - run: npm audit --audit-level=high
 
+  docker:
+    name: Build and smoke-test Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t twitchpc-cloud:ci .
+      - name: Smoke test health endpoint
+        run: |
+          docker run -d --name twitchpc-ci \
+            -e ADMIN_TOKEN=ci-test-token \
+            -e PORT=3000 \
+            -p 3000:3000 \
+            twitchpc-cloud:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs twitchpc-ci
+          exit 1
+      - name: Cleanup
+        if: always()
+        run: docker rm -f twitchpc-ci
+
   package-agent:
     name: Build standalone Windows agent
     runs-on: windows-latest
