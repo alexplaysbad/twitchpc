@@ -5,6 +5,7 @@ import { ExecHandler } from './actions/exec.js';
 import { HotkeyHandler } from './actions/hotkey.js';
 import { ObsHandler } from './actions/obs.js';
 import { allowedExecutables, loadAgentConfig } from './config.js';
+import { AgentControl } from './control.js';
 import { agentEnvPath, isStandaloneAgent, pairIfNeeded } from './pairing.js';
 import { checkForUpdate, localUpdateInfo } from './update.js';
 
@@ -15,6 +16,17 @@ if (isStandaloneAgent()) loadEnv({ path: agentEnvPath() });
 
 const config = loadAgentConfig();
 const log = (message: string): void => console.log(`[${new Date().toISOString()}] ${message}`);
+const version = localUpdateInfo();
+
+let control: AgentControl | undefined;
+const shutdown = (): void => {
+  control?.close();
+  process.exit(0);
+};
+control = new AgentControl(config, version, log, shutdown);
+control.listen();
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 const execHandler = new ExecHandler(allowedExecutables(config));
 const hotkeyHandler = new HotkeyHandler();
@@ -50,6 +62,7 @@ function connect(): void {
 
   socket.on('open', () => {
     log('Connected to cloud');
+    control?.setConnected(true);
     heartbeat = setInterval(() => {
       send({ type: 'heartbeat', agentId: config.AGENT_ID, at: new Date().toISOString() });
     }, config.HEARTBEAT_INTERVAL_MS);
@@ -71,7 +84,13 @@ function connect(): void {
 
     if (message.type === 'command') {
       const command: ActionCommand = message.command;
+      control?.noteCommand();
       log(`Received command ${command.id} (${command.action.type})`);
+      if (control?.isPaused()) {
+        log(`Command ${command.id} skipped: agent is paused`);
+        send({ type: 'ack', commandId: command.id, ok: false, error: 'Agent is paused', at: new Date().toISOString() });
+        return;
+      }
       void executeAction(command.action)
         .then(() => {
           log(`Command ${command.id} completed`);
@@ -94,6 +113,7 @@ function connect(): void {
   });
   socket.on('close', () => {
     if (heartbeat) clearInterval(heartbeat);
+    control?.setConnected(false);
     log(`Disconnected; retrying in ${config.RECONNECT_DELAY_MS / 1000}s`);
     setTimeout(connect, config.RECONNECT_DELAY_MS);
   });
@@ -111,9 +131,14 @@ async function start(): Promise<void> {
     return;
   }
 
-  log(`Agent version: ${localUpdateInfo()}`);
+  log(`Agent version: ${version}`);
   const restarting = await checkForUpdate(config, log);
-  if (!restarting) connect();
+  if (restarting) {
+    // The tray supervisor (or update batch) will start the new exe.
+    control?.close();
+    process.exit(0);
+  }
+  connect();
 }
 
 void start();

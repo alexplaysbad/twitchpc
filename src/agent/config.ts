@@ -12,6 +12,16 @@ const schema = z.object({
   OBS_PASSWORD: z.string().default(''),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(15000),
   RECONNECT_DELAY_MS: z.coerce.number().int().positive().default(3000),
+  /** Local-only HTTP port used by the tray app for status/pause/resume. */
+  AGENT_CONTROL_PORT: z.coerce.number().int().positive().default(4310),
+  /** Set by the tray launcher so auto-update lets the tray restart the agent. */
+  AGENT_SUPERVISED: z.preprocess(
+    (value) => {
+      if (value === '' || value === undefined) return false;
+      return String(value).toLowerCase() === 'true' || value === '1';
+    },
+    z.boolean()
+  ),
   AGENT_AUTO_UPDATE: z.preprocess(
     (value) => {
       if (value === '' || value === undefined) return true;

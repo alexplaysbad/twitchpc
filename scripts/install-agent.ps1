@@ -3,15 +3,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$exePath = Join-Path $PSScriptRoot 'twitchpc-agent.exe'
+$launcherPath = Join-Path $PSScriptRoot 'TwitchPC Agent.exe'
+$corePath = Join-Path $PSScriptRoot 'twitchpc-agent.exe'
 
-if (-not (Test-Path $exePath)) {
-  throw "Cannot find $exePath"
+foreach ($required in @($launcherPath, $corePath)) {
+  if (-not (Test-Path $required)) {
+    throw "Cannot find $required"
+  }
 }
 
 $action = New-ScheduledTaskAction `
-  -Execute 'powershell.exe' `
-  -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"& '$exePath'`"" `
+  -Execute $launcherPath `
   -WorkingDirectory $PSScriptRoot
 
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
@@ -28,9 +30,21 @@ Register-ScheduledTask `
   -Action $action `
   -Trigger $trigger `
   -Settings $settings `
-  -Description 'Runs the TwitchPC agent hidden at logon.' `
+  -Description 'Runs the TwitchPC agent tray application at logon.' `
   -Force | Out-Null
 
+$startMenuDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\TwitchPC'
+New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
+$shortcutPath = Join-Path $startMenuDir 'TwitchPC Agent.lnk'
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($shortcutPath)
+$shortcut.TargetPath = $launcherPath
+$shortcut.WorkingDirectory = $PSScriptRoot
+$shortcut.IconLocation = "$launcherPath,0"
+$shortcut.Description = 'TwitchPC agent tray application'
+$shortcut.Save()
+
 Start-ScheduledTask -TaskName $TaskName
-Write-Host "Installed and started scheduled task '$TaskName'."
-Write-Host "The agent runs hidden. Edit .env in $PSScriptRoot and reboot it from Task Scheduler if needed."
+Write-Host "Installed and started '$TaskName'."
+Write-Host 'The agent runs in the system tray. Right-click the tray icon to pause commands, open settings, restart, or exit.'
+Write-Host 'You can also reopen it from Start Menu > TwitchPC > TwitchPC Agent.'

@@ -37,15 +37,28 @@ npm run build:exe
 
 This creates a `release/` folder containing:
 
-- `twitchpc-agent.exe` — standalone executable with the Node runtime and all dependencies bundled
+- `TwitchPC Agent.exe` — the graphical system-tray app (no console window) that streamers should launch
+- `twitchpc-agent.exe` — the hidden agent engine with the Node runtime and dependencies bundled
 - `.env.example` — copy to `.env` in the same folder and fill in `CLOUD_URL`, `EXEC_ALLOWLIST`, OBS settings, and either `PAIRING_CODE` or a matching `AGENT_TOKEN`
-- `install-agent.ps1` / `uninstall-agent.ps1` — optional hidden logon task installer
-- `version.json` — version + SHA-256 manifest used for auto-updates
+- `install-agent.ps1` / `uninstall-agent.ps1` — optional hidden logon task + Start Menu installer
+- `version.json` — version + SHA-256 manifest used to auto-update the engine
 - `README.txt` — short instructions for the streamer
 
-Give the whole `release/` folder to the streamer. They edit `.env` next to the exe and either double-click `twitchpc-agent.exe` (console stays open) or right-click `install-agent.ps1` → **Run with PowerShell** to install a hidden logon task. Use `uninstall-agent.ps1` to remove it. The agent reads `.env` from the folder containing the exe even if launched from another working directory. Keep `.env` out of version control.
+Give the whole `release/` folder to the streamer. They edit `.env` next to the exes, then double-click **`TwitchPC Agent.exe`**. It starts the engine hidden and shows a tray icon. Right-click the icon to open settings, pause/resume commands, restart the engine, or exit. The engine reads `.env` from the folder containing the exe even if launched from another working directory. Keep `.env` out of version control.
 
-The exe uses Node's Single Executable Applications feature. It contains only code — no Twitch credentials — so each agent still needs its own `.env`.
+The engine uses Node's Single Executable Applications feature. It contains only code — no Twitch credentials — so each agent still needs its own `.env`.
+
+### Install as an app
+
+Right-click `install-agent.ps1` → **Run with PowerShell** to:
+
+- register a hidden logon task that starts `TwitchPC Agent.exe`;
+- add **Start Menu → TwitchPC → TwitchPC Agent** so the streamer can reopen it later;
+- start the tray app immediately.
+
+Run `uninstall-agent.ps1` to remove the task, shortcut, and running processes. It leaves the release folder and `.env` in place.
+
+The tray app talks to the engine over a loopback-only control API on `127.0.0.1:4310` (configurable with `AGENT_CONTROL_PORT`). The settings window edits the same `.env` file and restarts the engine after saving.
 
 ## Twitch setup
 

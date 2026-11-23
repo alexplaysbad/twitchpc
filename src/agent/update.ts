@@ -70,13 +70,16 @@ export async function checkForUpdate(config: AgentConfig, log: (message: string)
     const nextQ = quote(nextExe);
     const versionQ = quote(join(dir, 'version.json'));
     const nextVersionQ = quote(nextVersion);
+    const restartCommand = config.AGENT_SUPERVISED
+      ? 'rem Tray supervisor restarts the agent'
+      : `start "" powershell.exe -NoProfile -WindowStyle Hidden -Command "& '${currentExe.replace(/'/g, "''")}'"`;
     writeFileSync(batch, [
       '@echo off',
       ':wait',
       `move /y ${nextQ} ${exeQ} >nul 2>&1`,
       'if errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)',
       `move /y ${nextVersionQ} ${versionQ} >nul 2>&1`,
-      `start "" ${exeQ}`,
+      restartCommand,
       'del "%~f0"',
       ''
     ].join('\r\n'));

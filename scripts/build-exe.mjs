@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -56,6 +56,33 @@ execFileSync(
   { cwd: root, stdio: 'inherit' }
 );
 
+console.log('Building Windows tray launcher...');
+const csc = join(
+  process.env.WINDIR || 'C:\\Windows',
+  'Microsoft.NET',
+  'Framework',
+  'v4.0.30319',
+  'csc.exe'
+);
+if (!existsSync(csc)) {
+  throw new Error(`Could not find the .NET Framework C# compiler at ${csc}`);
+}
+const trayExe = join(releaseDir, 'TwitchPC Agent.exe');
+execFileSync(
+  csc,
+  [
+    '/nologo',
+    '/target:winexe',
+    '/optimize+',
+    `/out:${trayExe}`,
+    '/r:System.Core.dll',
+    '/r:System.Drawing.dll',
+    '/r:System.Windows.Forms.dll',
+    join(root, 'scripts', 'twitchpc-tray.cs')
+  ],
+  { cwd: root, stdio: 'inherit' }
+);
+
 copyFileSync(join(root, '.env.example'), join(releaseDir, '.env.example'));
 copyFileSync(join(root, 'scripts', 'install-agent.ps1'), join(releaseDir, 'install-agent.ps1'));
 copyFileSync(join(root, 'scripts', 'uninstall-agent.ps1'), join(releaseDir, 'uninstall-agent.ps1'));
@@ -77,10 +104,12 @@ writeFileSync(
     '   AGENT_ID / PAIRING_CODE lines into this .env, then start the agent once.',
     '   It saves its own AGENT_TOKEN back into this file and clears PAIRING_CODE.',
     '   Alternatively, set AGENT_TOKEN to exactly the cloud AGENT_TOKEN value.',
-    '4. Optional: right-click install-agent.ps1 and choose Run with PowerShell.',
-    '   This installs a hidden logon task so the agent starts automatically.',
-    '   Use uninstall-agent.ps1 to remove it.',
-    '5. Without the task, double-click twitchpc-agent.exe and leave the console open.',
+    '4. Double-click "TwitchPC Agent.exe" for the system tray app. Click the tray',
+    '   icon (or right-click it) to edit settings, pause/resume commands, restart',
+    '   the agent, or exit. The hidden twitchpc-agent.exe is the engine.',
+    '5. Right-click install-agent.ps1 and choose Run with PowerShell. This adds a',
+    '   hidden logon task plus Start Menu > TwitchPC > TwitchPC Agent, and starts',
+    '   the tray app at logon. Use uninstall-agent.ps1 to remove all of that.',
     '',
     'Auto-update: if the cloud serves a newer version.json, the agent downloads and',
     'verifies the new exe, then restarts. Set AGENT_AUTO_UPDATE=false to disable.',
