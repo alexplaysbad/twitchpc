@@ -70,7 +70,10 @@ async function main(): Promise<void> {
   const health = (): HealthSnapshot => {
     const agents = listAgents(db);
     return {
+      automationsEnabled: executor.isEnabled(),
+      eventSubEnabled: eventsub?.isEnabled() ?? true,
       eventSubConnected: eventsub?.isConnected() ?? false,
+      chatEnabled: chat?.isEnabled() ?? true,
       chatConnected: chat?.isConnected() ?? false,
       schemaVersion: getMigrationVersion(db),
       lastEventAt: getLastEventAt(db),
@@ -83,6 +86,14 @@ async function main(): Promise<void> {
     config,
     db,
     executor,
+    eventsub: {
+      setEnabled: (enabled) => eventsub?.setEnabled(enabled),
+      isEnabled: () => eventsub?.isEnabled() ?? true
+    },
+    chat: {
+      setEnabled: async (enabled) => { await chat?.setEnabled(enabled); },
+      isEnabled: () => chat?.isEnabled() ?? true
+    },
     health,
     revokeAgent: (id, reason) => hub.revokeAgent(id, reason)
   });

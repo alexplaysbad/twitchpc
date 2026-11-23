@@ -75,6 +75,26 @@ button { cursor: pointer; }
 .brand p { margin: 0; color: var(--muted); font-size: 12px; }
 .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 
+.master-switch {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--card);
+  font-size: 12px; font-weight: 600; color: var(--muted); user-select: none;
+}
+.master-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.master-switch .slider {
+  position: relative; width: 34px; height: 20px; border-radius: 999px; background: var(--border-strong);
+  transition: .18s; flex: 0 0 auto;
+}
+.master-switch .slider::before {
+  content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px;
+  border-radius: 50%; background: var(--on-accent); box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: .18s;
+}
+.master-switch input:checked + .slider { background: var(--accent); }
+.master-switch input:checked + .slider::before { transform: translateX(14px); }
+.master-switch input:checked ~ #master-label { color: var(--text); }
+.master-switch.off { background: var(--red-soft); border-color: transparent; color: var(--red); }
+.master-switch.off .slider { background: #d25a67; }
+
 .status-pill {
   display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px;
   border-radius: 999px; background: var(--subtle); color: var(--muted); font-size: 12px; font-weight: 600;

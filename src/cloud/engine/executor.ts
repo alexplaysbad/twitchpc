@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { ActionCommand, Automation, TwitchEvent } from '../../shared/types.js';
 import type { CloudConfig } from '../config.js';
 import {
+  getSetting,
   insertCommand,
   listAutomations,
   logEvent,
@@ -24,6 +25,8 @@ export interface RunResult {
   cooldownSkipped: string[];
 }
 
+export const AUTOMATIONS_ENABLED_KEY = 'automations_enabled';
+
 export class RuleExecutor {
   private readonly lastRun = new Map<string, number>();
 
@@ -34,8 +37,21 @@ export class RuleExecutor {
     private readonly log: (message: string) => void
   ) {}
 
+  isEnabled(): boolean {
+    return getSetting(this.db, AUTOMATIONS_ENABLED_KEY) !== '0';
+  }
+
+  setEnabled(enabled: boolean): void {
+    setSetting(this.db, AUTOMATIONS_ENABLED_KEY, enabled ? '1' : '0');
+  }
+
   async run(event: TwitchEvent, dryRun = false): Promise<RunResult> {
     const result: RunResult = { matched: [], commands: [], cooldownSkipped: [] };
+    if (!dryRun && !this.isEnabled()) {
+      logEvent(this.db, event, [], event);
+      setSetting(this.db, 'last_event_at', new Date().toISOString());
+      return result;
+    }
     const automations: Automation[] = listAutomations(this.db);
     const now = Date.now();
 

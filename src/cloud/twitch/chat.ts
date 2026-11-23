@@ -6,6 +6,7 @@ import { normalizeChatMessage } from './normalize.js';
 export class ChatClient {
   private client: tmi.Client | undefined;
   private connected = false;
+  private enabled = true;
 
   constructor(
     private readonly config: CloudConfig,
@@ -13,7 +14,25 @@ export class ChatClient {
     private readonly log: (message: string) => void
   ) {}
 
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  async setEnabled(enabled: boolean): Promise<void> {
+    if (this.enabled === enabled) return;
+    this.enabled = enabled;
+    if (!enabled) {
+      this.log('Chat: disabled, disconnecting');
+      await this.stop();
+      return;
+    }
+    this.log('Chat: enabled, connecting');
+    await this.start();
+  }
+
   async start(): Promise<void> {
+    if (!this.enabled) return;
+    if (this.client) return;
     if (!this.config.TWITCH_BOT_TOKEN || !this.config.TWITCH_BOT_USERNAME) {
       this.log('Chat: TWITCH_BOT_TOKEN/TWITCH_BOT_USERNAME not set; chat commands disabled');
       return;
@@ -62,5 +81,6 @@ export class ChatClient {
   async stop(): Promise<void> {
     if (this.client) await this.client.disconnect();
     this.client = undefined;
+    this.connected = false;
   }
 }

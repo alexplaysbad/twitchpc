@@ -41,7 +41,15 @@ function variablesForTrigger(type) {
 
 let lastTemplateTarget = null;
 
-const state = { automations: [], agents: [], agentTokens: [], editing: null, logs: [], commands: [] };
+const state = {
+  automations: [],
+  agents: [],
+  agentTokens: [],
+  system: { automationsEnabled: true, eventSubEnabled: true, chatEnabled: true },
+  editing: null,
+  logs: [],
+  commands: []
+};
 
 function uid() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -935,6 +943,39 @@ async function loadActivity() {
   renderCommands();
 }
 
+async function loadSystem() {
+  state.system = await api('/api/system');
+  renderSystem();
+}
+
+function renderSystem() {
+  const enabled = Boolean(state.system?.automationsEnabled);
+  const input = $('master-enabled');
+  const label = $('master-label');
+  const wrap = input?.closest('.master-switch');
+  if (input) input.checked = enabled;
+  if (label) label.textContent = enabled ? 'System on' : 'System off';
+  if (wrap) wrap.classList.toggle('off', !enabled);
+}
+
+$('master-enabled').addEventListener('change', async (event) => {
+  const enabled = event.target.checked;
+  try {
+    state.system = await api('/api/system', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        automationsEnabled: enabled,
+        eventSubEnabled: enabled,
+        chatEnabled: enabled
+      })
+    });
+    renderSystem();
+  } catch (error) {
+    event.target.checked = !enabled;
+    alert(`Could not update system: ${error.message}`);
+  }
+});
+
 async function loadAgents() {
   const [agents, tokens] = await Promise.all([
     api('/api/agents'),
@@ -975,7 +1016,12 @@ function renderAgentManager() {
           ? `Paired · last used ${esc(fmtTime(token.lastUsedAt))}`
           : '<span class="muted">No token (shared fallback)</span>'}</td>
         <td>
-          <button class="btn tiny ghost" data-agent-toggle="${esc(agent.id)}" data-enabled="${agent.enabled ? 'true' : 'false'}">${agent.enabled ? 'Disable' : 'Enable'}</button>
+          <label class="switch" title="${agent.enabled ? 'Disable agent' : 'Enable agent'}">
+            <input type="checkbox" data-agent-enabled="${esc(agent.id)}" ${agent.enabled ? 'checked' : ''} />
+            <span></span>
+          </label>
+        </td>
+        <td>
           <button class="btn tiny danger-ghost" data-agent-revoke-token="${esc(agent.id)}">Revoke token</button>
           <button class="btn tiny danger-ghost" data-agent-delete="${esc(agent.id)}">Delete</button>
         </td>
@@ -984,25 +1030,38 @@ function renderAgentManager() {
 
   container.innerHTML = `
     <table>
-      <thead><tr><th>Agent</th><th>Status</th><th>Last seen</th><th>Token</th><th>Manage</th></tr></thead>
-      <tbody>${rows || '<tr class="empty-row"><td colspan="5">No agents paired yet</td></tr>'}</tbody>
+      <thead><tr><th>Agent</th><th>Status</th><th>Last seen</th><th>Token</th><th>Enabled</th><th>Actions</th></tr></thead>
+      <tbody>${rows || '<tr class="empty-row"><td colspan="6">No agents paired yet</td></tr>'}</tbody>
     </table>`;
 }
 
+$('agent-manager').addEventListener('change', async (event) => {
+  const input = event.target.closest('input[data-agent-enabled]');
+  if (!input) return;
+  const id = input.dataset.agentEnabled;
+  const enabled = input.checked;
+  if (!enabled && !confirm(`Disable agent “${id}”? It will be disconnected and blocked until re-enabled.`)) {
+    input.checked = true;
+    return;
+  }
+  try {
+    await api(`/api/agents/${encodeURIComponent(id)}/enabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled })
+    });
+    await loadPairing();
+  } catch (error) {
+    input.checked = !enabled;
+    alert(`Agent update failed: ${error.message}`);
+  }
+});
+
 $('agent-manager').addEventListener('click', async (event) => {
-  const button = event.target.closest('button[data-agent-toggle], button[data-agent-revoke-token], button[data-agent-delete]');
+  const button = event.target.closest('button[data-agent-revoke-token], button[data-agent-delete]');
   if (!button) return;
 
   try {
-    if (button.dataset.agentToggle) {
-      const id = button.dataset.agentToggle;
-      const enabled = button.dataset.enabled !== 'true';
-      if (!enabled && !confirm(`Disable agent “${id}”? It will be disconnected and all agents using this ID will be blocked until re-enabled.`)) return;
-      await api(`/api/agents/${encodeURIComponent(id)}/enabled`, {
-        method: 'PATCH',
-        body: JSON.stringify({ enabled })
-      });
-    } else if (button.dataset.agentRevokeToken) {
+    if (button.dataset.agentRevokeToken) {
       const id = button.dataset.agentRevokeToken;
       if (!confirm(`Revoke the token for “${id}”? It will be disconnected immediately.`)) return;
       await api(`/api/agents/${encodeURIComponent(id)}/token`, { method: 'DELETE' });
@@ -1019,7 +1078,7 @@ $('agent-manager').addEventListener('click', async (event) => {
 
 async function refreshAll() {
   try {
-    await Promise.all([loadAutomations(), loadActivity(), loadAgents()]);
+    await Promise.all([loadSystem(), loadAutomations(), loadActivity(), loadAgents()]);
   } catch (error) {
     if (/admin token|401/i.test(error.message)) {
       const badge = $('agent-status');
@@ -1180,5 +1239,5 @@ $('pairing-list').addEventListener('click', async (event) => {
 renderSimFields();
 void refreshAll();
 setInterval(() => {
-  void Promise.allSettled([loadAgents(), loadActivity()]);
+  void Promise.allSettled([loadSystem(), loadAgents(), loadActivity()]);
 }, 5000);

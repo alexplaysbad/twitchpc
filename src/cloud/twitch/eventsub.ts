@@ -65,6 +65,31 @@ export class EventSubClient {
     return this.socket?.readyState === WebSocket.OPEN;
   }
 
+  isEnabled(): boolean {
+    return !this.stopped;
+  }
+
+  setEnabled(enabled: boolean): void {
+    if (enabled) {
+      if (!this.stopped) return;
+      this.stopped = false;
+      this.attempt = 0;
+      this.pendingReconnect = false;
+      this.log('EventSub: enabled, connecting');
+      void this.connect();
+      return;
+    }
+    if (this.stopped) return;
+    this.stopped = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.reconnectTimer = undefined;
+    this.watchdog = undefined;
+    this.socket?.close();
+    this.socket = undefined;
+    this.log('EventSub: disabled, stopped listening');
+  }
+
   stop(): void {
     this.stopped = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);

@@ -24,6 +24,11 @@
       </div>
     </div>
     <div class="header-right">
+      <label class="master-switch" title="Stop listening to Twitch events and stop triggering automations">
+        <input id="master-enabled" type="checkbox" checked />
+        <span class="slider"></span>
+        <span id="master-label">System on</span>
+      </label>
       <span id="agent-status" class="status-pill">Checking agent…</span>
       <details class="settings">
         <summary>Settings</summary>
@@ -59,7 +64,7 @@
       <div class="section-head">
         <div>
           <h2>Agent manager</h2>
-          <p class="subtitle">Pair, disable, re-enable, or delete agents. Disabled and deleted agents cannot connect.</p>
+          <p class="subtitle">Pair agents, toggle them on/off individually, revoke tokens, or delete them. Disabled and deleted agents cannot connect.</p>
         </div>
         <button id="pairing-close" class="btn ghost">Close</button>
       </div>

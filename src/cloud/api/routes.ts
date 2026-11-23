@@ -145,7 +145,10 @@ const agentEnabledInput = z.object({
 });
 
 export interface HealthSnapshot {
+  automationsEnabled: boolean;
+  eventSubEnabled: boolean;
   eventSubConnected: boolean;
+  chatEnabled: boolean;
   chatConnected: boolean;
   schemaVersion: number;
   lastEventAt: string | null;
@@ -156,12 +159,14 @@ interface RouteDeps {
   config: CloudConfig;
   db: DatabaseSync;
   executor: RuleExecutor;
+  eventsub?: { setEnabled: (enabled: boolean) => void; isEnabled: () => boolean };
+  chat?: { setEnabled: (enabled: boolean) => Promise<void>; isEnabled: () => boolean };
   health?: () => HealthSnapshot;
   revokeAgent?: (id: string, reason?: string) => void;
 }
 
 export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { config, db, executor, health, revokeAgent } = deps;
+  const { config, db, executor, eventsub, chat, health, revokeAgent } = deps;
 
   // Some clients send Content-Type: application/json on bodyless DELETEs. Treat
   // an empty body as {} so revoke buttons never fail with a 400 parse error.
@@ -181,8 +186,33 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/health', async () => ({
     ok: true,
     uptimeSeconds: Math.round(process.uptime()),
+    automationsEnabled: executor.isEnabled(),
     ...(health ? { ...health() } : {})
   }));
+
+  app.get('/api/system', async () => ({
+    automationsEnabled: executor.isEnabled(),
+    eventSubEnabled: eventsub?.isEnabled() ?? true,
+    chatEnabled: chat?.isEnabled() ?? true
+  }));
+
+  app.patch('/api/system', async (request) => {
+    const input = z.object({
+      automationsEnabled: z.boolean().optional(),
+      eventSubEnabled: z.boolean().optional(),
+      chatEnabled: z.boolean().optional()
+    }).parse(request.body ?? {});
+
+    if (typeof input.automationsEnabled === 'boolean') executor.setEnabled(input.automationsEnabled);
+    if (typeof input.eventSubEnabled === 'boolean') eventsub?.setEnabled(input.eventSubEnabled);
+    if (typeof input.chatEnabled === 'boolean') await chat?.setEnabled(input.chatEnabled);
+
+    return {
+      automationsEnabled: executor.isEnabled(),
+      eventSubEnabled: eventsub?.isEnabled() ?? true,
+      chatEnabled: chat?.isEnabled() ?? true
+    };
+  });
 
   app.get('/api/agent/version', async (_request, reply) => {
     try {

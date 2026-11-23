@@ -265,7 +265,8 @@ Templates use `{{user.login}}`, `{{user.displayName}}`, `{{data.bits}}`, `{{data
 
 Open `/ui/`. It is form-based — no JSON editing required.
 
-- Generate one-time agent codes with **Pair agent**, then manage agents from the same panel: disable/enable, revoke tokens, or delete them.
+- Use the header master switch to disable/enable the whole system (stops Twitch listening and automation dispatch).
+- Generate one-time agent codes with **Pair agent**, then manage agents from the same panel: per-agent enable switches, revoke tokens, or delete them.
 - Switch between light and dark mode with the header toggle; the choice is remembered locally.
 - Build automations with a guided **When this happens → Do this** form.
 - Add actions for programs, CMD commands, hotkeys, OBS scenes/sources and webhooks; reorder or remove them.
@@ -279,7 +280,7 @@ Open `/ui/`. It is form-based — no JSON editing required.
 
 ## API
 
-`GET /api/health`, `GET /api/agent/version`, `POST /api/agent/pair`, `GET|POST /api/pairing`, `DELETE /api/pairing/:code`, `GET /api/agents/tokens`, `PATCH /api/agents/:id/enabled`, `DELETE /api/agents/:id`, `DELETE /api/agents/:id/token`, `GET /api/eventsub/subscriptions`, `GET|POST /api/automations`, `POST /api/automations/import`, `PUT|DELETE /api/automations/:id`, `PATCH /api/automations/:id/toggle`, `POST /api/simulate`, `POST /api/events/:id/replay`, `GET /api/logs`, `GET /api/commands`, `GET /api/agents`.
+`GET /api/health`, `GET /api/system`, `PATCH /api/system`, `GET /api/agent/version`, `POST /api/agent/pair`, `GET|POST /api/pairing`, `DELETE /api/pairing/:code`, `GET /api/agents/tokens`, `PATCH /api/agents/:id/enabled`, `DELETE /api/agents/:id`, `DELETE /api/agents/:id/token`, `GET /api/eventsub/subscriptions`, `GET|POST /api/automations`, `POST /api/automations/import`, `PUT|DELETE /api/automations/:id`, `PATCH /api/automations/:id/toggle`, `POST /api/simulate`, `POST /api/events/:id/replay`, `GET /api/logs`, `GET /api/commands`, `GET /api/agents`.
 
 ## CI
 
