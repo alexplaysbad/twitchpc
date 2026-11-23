@@ -1,10 +1,11 @@
 import { config as loadEnv } from 'dotenv';
 import WebSocket from 'ws';
 import type { Action, ActionCommand, AgentToCloudMessage, CloudToAgentMessage } from '../shared/types.js';
+import { CmdHandler } from './actions/cmd.js';
 import { ExecHandler } from './actions/exec.js';
 import { HotkeyHandler } from './actions/hotkey.js';
 import { ObsHandler } from './actions/obs.js';
-import { allowedExecutables, loadAgentConfig } from './config.js';
+import { allowedCmdCommands, allowedExecutables, loadAgentConfig } from './config.js';
 import { AgentControl } from './control.js';
 import { agentEnvPath, exchangePairingCode, isStandaloneAgent, pairIfNeeded, updateAgentEnv } from './pairing.js';
 import { checkForUpdate, localUpdateInfo } from './update.js';
@@ -65,6 +66,7 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 const execHandler = new ExecHandler(allowedExecutables(config));
+const cmdHandler = new CmdHandler(allowedCmdCommands(config), config.CMD_TIMEOUT_MS);
 const hotkeyHandler = new HotkeyHandler();
 const obsHandler = new ObsHandler(config);
 
@@ -72,6 +74,8 @@ async function executeAction(action: Action): Promise<void> {
   switch (action.type) {
     case 'exec':
       return execHandler.execute(action);
+    case 'cmd':
+      return cmdHandler.execute(action);
     case 'hotkey':
       return hotkeyHandler.execute(action);
     case 'obs_scene':
@@ -164,6 +168,8 @@ function connect(): void {
       control?.setNeedsPairing(true);
       log('Cloud rejected the connection: this agent token is unknown or revoked. ' +
           'Enter a fresh pairing code in the tray app (or check AGENT_TOKEN in the .env file next to this agent).');
+    } else if (error.message.includes('403')) {
+      log('Cloud has disabled or removed this agent. Re-enable or re-pair it in the dashboard Agent Manager.');
     }
   });
   socket.on('close', () => {

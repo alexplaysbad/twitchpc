@@ -13,8 +13,11 @@ import {
   deleteAutomation,
   deleteExpiredPairingCodes,
   deletePairingCode,
+  deletePairingCodesForAgent,
+  getAgentStatus,
   getAutomation,
   getEventLog,
+  getPairingCode,
   listAgentTokens,
   listAgents,
   listAutomations,
@@ -23,6 +26,8 @@ import {
   listEventSubSubscriptions,
   listPairingCodes,
   saveAutomation,
+  setAgentEnabled,
+  softDeleteAgent,
   storeAgentToken,
   upsertAgent
 } from '../db/repositories.js';
@@ -47,6 +52,15 @@ const actionSchema = z.discriminatedUnion('type', [
     agentId: z.string().optional(),
     command: z.string().min(1),
     args: z.array(z.string()).default([]),
+    cwd: z.string().optional()
+  }),
+  z.object({
+    id: z.string().default(() => randomUUID()),
+    label: z.string().optional(),
+    type: z.literal('cmd'),
+    target: z.literal('agent'),
+    agentId: z.string().optional(),
+    command: z.string().min(1),
     cwd: z.string().optional()
   }),
   z.object({
@@ -126,6 +140,10 @@ const pairingExchangeInput = z.object({
   code: z.string().min(4).max(64)
 });
 
+const agentEnabledInput = z.object({
+  enabled: z.boolean()
+});
+
 export interface HealthSnapshot {
   eventSubConnected: boolean;
   chatConnected: boolean;
@@ -139,7 +157,7 @@ interface RouteDeps {
   db: DatabaseSync;
   executor: RuleExecutor;
   health?: () => HealthSnapshot;
-  revokeAgent?: (id: string) => void;
+  revokeAgent?: (id: string, reason?: string) => void;
 }
 
 export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -200,7 +218,20 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   // Public: an agent with a one-time code exchanges it for its own token.
   app.post('/api/agent/pair', async (request, reply) => {
     const { code } = pairingExchangeInput.parse(request.body);
-    const pairing = consumePairingCode(db, code.trim().toUpperCase());
+    const normalized = code.trim().toUpperCase();
+    const candidate = getPairingCode(db, normalized);
+    if (!candidate) return reply.code(400).send({ error: 'Pairing code is invalid, expired, or already used' });
+
+    const status = getAgentStatus(db, candidate.agentId);
+    if (status && (!status.enabled || status.deleted)) {
+      return reply.code(403).send({
+        error: status.deleted
+          ? 'This agent was deleted. Create a new pairing code for a new agent ID.'
+          : 'This agent is disabled. Re-enable it in the Agent Manager first.'
+      });
+    }
+
+    const pairing = consumePairingCode(db, normalized);
     if (!pairing) return reply.code(400).send({ error: 'Pairing code is invalid, expired, or already used' });
 
     const token = generateSecret(32);
@@ -219,6 +250,15 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const input = pairingCreateInput.parse(request.body ?? {});
     deleteExpiredPairingCodes(db);
     const agentId = input.agentId ?? config.DEFAULT_AGENT_ID;
+    const status = getAgentStatus(db, agentId);
+    if (status && (!status.enabled || status.deleted)) {
+      return reply.code(409).send({
+        error: status.deleted
+          ? 'That agent was deleted. Use a different agent ID.'
+          : 'That agent is disabled. Re-enable it before generating a code.'
+      });
+    }
+
     const code = generatePairingCode();
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + 10 * 60_000);
@@ -239,10 +279,27 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   app.get('/api/agents/tokens', async () => listAgentTokens(db));
 
+  app.patch('/api/agents/:id/enabled', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { enabled } = agentEnabledInput.parse(request.body);
+    if (!setAgentEnabled(db, id, enabled)) return reply.code(404).send({ error: 'Agent not found' });
+    if (!enabled) revokeAgent?.(id, 'Agent disabled');
+    return { id, enabled };
+  });
+
+  app.delete('/api/agents/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!softDeleteAgent(db, id)) return reply.code(404).send({ error: 'Agent not found' });
+    deleteAgentToken(db, id);
+    deletePairingCodesForAgent(db, id);
+    revokeAgent?.(id, 'Agent deleted');
+    return reply.code(204).send();
+  });
+
   app.delete('/api/agents/:id/token', async (request, reply) => {
     const { id } = request.params as { id: string };
     deleteAgentToken(db, id);
-    revokeAgent?.(id);
+    revokeAgent?.(id, 'Token revoked');
     return reply.code(204).send();
   });
 

@@ -3,7 +3,7 @@
 A TypeScript backend for turning Twitch events into automations on a streamer's PC.
 
 - **Cloud control plane** — listens to Twitch EventSub (channel points, subs, gift subs, bits) and a chat bot (`!commands`), matches configurable rules, stores everything in SQLite, exposes a REST API and a minimal test UI, and forwards PC actions to the local agent.
-- **Local agent** — runs on the streamer's Windows PC, connects **outbound** to the cloud over WebSockets, and executes allowlisted `exec`/hotkey actions plus OBS scene/source control.
+- **Local agent** — runs on the streamer's Windows PC, connects **outbound** to the cloud over WebSockets, and executes allowlisted `exec`/`cmd`/hotkey actions plus OBS scene/source control.
 - **Webhook action** — runs in the cloud. Use it as a generic hook to wire up your own overlay service (e.g. Pogly.GG); there is no overlay server in this project.
 
 ## Quick start
@@ -81,7 +81,7 @@ This creates a `release/` folder containing:
 
 - `TwitchPC Agent.exe` — the graphical system-tray app (no console window) that streamers should launch
 - `twitchpc-agent.exe` — the hidden agent engine with the Node runtime and dependencies bundled
-- `.env.example` — copy to `.env` in the same folder and fill in `CLOUD_URL`, `EXEC_ALLOWLIST`, OBS settings, and either `PAIRING_CODE` or a matching `AGENT_TOKEN`
+- `.env.example` — copy to `.env` in the same folder and fill in `CLOUD_URL`, `EXEC_ALLOWLIST`, `CMD_ALLOWLIST`, OBS settings, and either `PAIRING_CODE` or a matching `AGENT_TOKEN`
 - `install-agent.ps1` / `uninstall-agent.ps1` — optional hidden logon task + Start Menu installer
 - `version.json` — version + SHA-256 manifest used to auto-update the engine
 - `README.txt` — short instructions for the streamer
@@ -174,7 +174,7 @@ Open the dashboard at `https://<machine-name>.<tailnet>.ts.net/ui/`. Tailscale S
 
 If `ADMIN_TOKEN` is empty, the cloud generates a strong token at startup, stores it in `data/admin-token.txt`, and prints it once. Paste it into the dashboard's **Settings → Admin token** field. Set `ADMIN_TOKEN` explicitly in `.env` if you want to manage it yourself. `/api/health`, `/api/agent/version` and `/api/agent/pair` remain public; every other `/api` route requires `Authorization: Bearer <token>`.
 
-### Pair an agent (recommended)
+### Agent manager (recommended)
 
 You no longer have to copy a shared secret by hand:
 
@@ -185,7 +185,14 @@ You no longer have to copy a shared secret by hand:
 
 If you prefer the file-based flow, copy the generated `AGENT_ID` / `PAIRING_CODE` snippet into the `.env` next to `twitchpc-agent.exe` and start the agent once. Codes expire after 10 minutes and work exactly once.
 
-Use the **Revoke** buttons in the dashboard pairing panel to invalidate an unused code or an existing agent token. Revoking a token disconnects that agent right away; its tray app will ask for a fresh code on the next poll. The old shared `AGENT_TOKEN` in the cloud `.env` still works as a fallback for existing installs; if it is set, any agent presenting that exact token can connect as any ID.
+The dashboard Agent Manager also lets you:
+
+- **Disable** an agent to disconnect it and reject future connections until you re-enable it.
+- **Enable** a disabled agent so it can pair/connect again.
+- **Revoke token** to disconnect a paired agent and force a fresh pairing code.
+- **Delete** an agent to remove its token/pairing codes and keep a tombstone so that agent ID cannot reconnect with the old shared fallback token.
+
+The old shared `AGENT_TOKEN` in the cloud `.env` still works as a fallback for existing installs; if it is set, any agent presenting that exact token can connect as any non-deleted, enabled ID.
 
 ### Troubleshooting: agent says `unexpected server response: 401`
 
@@ -210,6 +217,7 @@ OBS_PASSWORD=your-password
 
 - The cloud can trigger code execution on the agent. Use WSS in production (`CLOUD_URL=wss://...`) and unique per-agent tokens from the pairing flow. The shared `AGENT_TOKEN` fallback is convenient but less isolated.
 - `EXEC_ALLOWLIST` is a comma-separated list of executable names/paths the agent will accept. Cloud rules must use one of those exact strings as the `command`.
+- `CMD_ALLOWLIST` is a list of **exact** `cmd.exe /c` command lines the agent will accept. Separate entries with `|` or newlines. Example: `CMD_ALLOWLIST=shutdown /s /t 0|shutdown /r /t 0`. The final rendered command is checked against the allowlist, so template values cannot escape it.
 - `ADMIN_TOKEN` is generated automatically on first run if left empty; enter it in the UI's **Settings → Admin token** field.
 - Commands that are not acknowledged within `COMMAND_TIMEOUT_MS` (default 30s) are marked `failed`, including commands left in flight after a cloud restart.
 
@@ -245,21 +253,22 @@ Action types:
 | Type | Target | Description |
 | --- | --- | --- |
 | `exec` | agent | Launch an allowlisted executable with args |
+| `cmd` | agent | Run an exact allowlisted command line through `cmd.exe /c` (e.g. shutdown) |
 | `hotkey` | agent | Send keys via PowerShell SendKeys, optionally focusing a window by title |
 | `obs_scene` | agent | Switch the current program scene |
 | `obs_source` | agent | Enable/disable a scene item |
 | `webhook` | cloud | HTTP POST/PUT/GET with templated URL, headers and body |
 
-Templates use `{{user.login}}`, `{{user.displayName}}`, `{{data.bits}}`, `{{data.rewardTitle}}`, etc. They work in all string action fields, so a webhook body can carry event data to your own overlay integration.
+Templates use `{{user.login}}`, `{{user.displayName}}`, `{{data.bits}}`, `{{data.rewardTitle}}`, etc. They work in all string action fields, so a webhook body can carry event data to your own overlay integration. For `cmd`, the **final rendered** command is checked against `CMD_ALLOWLIST`, so keep allowed entries as exact command lines.
 
 ## Dashboard
 
 Open `/ui/`. It is form-based — no JSON editing required.
 
-- Generate one-time agent codes with **Pair agent**, then revoke codes or tokens from the same panel.
+- Generate one-time agent codes with **Pair agent**, then manage agents from the same panel: disable/enable, revoke tokens, or delete them.
 - Switch between light and dark mode with the header toggle; the choice is remembered locally.
 - Build automations with a guided **When this happens → Do this** form.
-- Add actions for programs, hotkeys, OBS scenes/sources and webhooks; reorder or remove them.
+- Add actions for programs, CMD commands, hotkeys, OBS scenes/sources and webhooks; reorder or remove them.
 - Choose a target agent per agent action (`First online agent` or a specific `AGENT_ID`).
 - Insert event variables into text fields with the variable picker.
 - Set global and per-user cooldowns.
@@ -270,7 +279,7 @@ Open `/ui/`. It is form-based — no JSON editing required.
 
 ## API
 
-`GET /api/health`, `GET /api/agent/version`, `POST /api/agent/pair`, `GET|POST /api/pairing`, `DELETE /api/pairing/:code`, `GET /api/agents/tokens`, `DELETE /api/agents/:id/token`, `GET /api/eventsub/subscriptions`, `GET|POST /api/automations`, `POST /api/automations/import`, `PUT|DELETE /api/automations/:id`, `PATCH /api/automations/:id/toggle`, `POST /api/simulate`, `POST /api/events/:id/replay`, `GET /api/logs`, `GET /api/commands`, `GET /api/agents`.
+`GET /api/health`, `GET /api/agent/version`, `POST /api/agent/pair`, `GET|POST /api/pairing`, `DELETE /api/pairing/:code`, `GET /api/agents/tokens`, `PATCH /api/agents/:id/enabled`, `DELETE /api/agents/:id`, `DELETE /api/agents/:id/token`, `GET /api/eventsub/subscriptions`, `GET|POST /api/automations`, `POST /api/automations/import`, `PUT|DELETE /api/automations/:id`, `PATCH /api/automations/:id/toggle`, `POST /api/simulate`, `POST /api/events/:id/replay`, `GET /api/logs`, `GET /api/commands`, `GET /api/agents`.
 
 ## CI
 

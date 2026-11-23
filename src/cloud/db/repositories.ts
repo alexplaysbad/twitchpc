@@ -203,6 +203,15 @@ export function markCommand(db: DatabaseSync, id: string, status: CommandStatus,
     .run(status, error ?? null, new Date().toISOString(), id);
 }
 
+/** Records which agent actually received a command, even when targeting was implicit. */
+export function markCommandSent(db: DatabaseSync, id: string, agentId: string): void {
+  db.prepare(`
+    UPDATE commands
+    SET status = 'sent', agent_id = ?, error = NULL, updated_at = ?
+    WHERE id = ?
+  `).run(agentId, new Date().toISOString(), id);
+}
+
 export function upsertAgent(db: DatabaseSync, id: string, tokenHash: string): void {
   db.prepare(`
     INSERT INTO agents (id, token_hash, last_seen, connected) VALUES (?, ?, NULL, 0)
@@ -216,13 +225,64 @@ export function updateAgentPresence(db: DatabaseSync, id: string, connected: boo
     .run(connected ? 1 : 0, new Date().toISOString(), id);
 }
 
-export function listAgents(db: DatabaseSync): AgentInfo[] {
-  const rows = db.prepare('SELECT * FROM agents ORDER BY id').all() as Row[];
-  return rows.map((row) => ({
+function toAgent(row: Row): AgentInfo {
+  return {
     id: String(row['id']),
     connected: Number(row['connected']) === 1,
-    lastSeen: row['last_seen'] === null || row['last_seen'] === undefined ? null : String(row['last_seen'])
-  }));
+    lastSeen: row['last_seen'] === null || row['last_seen'] === undefined ? null : String(row['last_seen']),
+    enabled: row['deleted_at'] === null || row['deleted_at'] === undefined
+      ? Number(row['enabled']) === 1
+      : false
+  };
+}
+
+export function listAgents(db: DatabaseSync): AgentInfo[] {
+  const rows = db.prepare('SELECT * FROM agents WHERE deleted_at IS NULL ORDER BY id').all() as Row[];
+  return rows.map(toAgent);
+}
+
+export function getAgentStatus(db: DatabaseSync, id: string): { enabled: boolean; deleted: boolean } | undefined {
+  const row = db.prepare('SELECT enabled, deleted_at FROM agents WHERE id = ?').get(id) as Row | undefined;
+  if (!row) return undefined;
+  const deleted = row['deleted_at'] !== null && row['deleted_at'] !== undefined;
+  return { enabled: !deleted && Number(row['enabled']) === 1, deleted };
+}
+
+export function setAgentEnabled(db: DatabaseSync, id: string, enabled: boolean): boolean {
+  const result = db.prepare(`
+    UPDATE agents
+    SET enabled = ?, connected = CASE WHEN ? = 0 THEN 0 ELSE connected END
+    WHERE id = ? AND deleted_at IS NULL
+  `).run(enabled ? 1 : 0, enabled ? 1 : 0, id);
+  return Number(result.changes) > 0;
+}
+
+/** Soft-delete keeps a tombstone so a deleted ID cannot reconnect with a shared token. */
+export function softDeleteAgent(db: DatabaseSync, id: string): boolean {
+  const result = db.prepare(`
+    UPDATE agents
+    SET enabled = 0, deleted_at = ?, token_hash = '', connected = 0
+    WHERE id = ? AND deleted_at IS NULL
+  `).run(new Date().toISOString(), id);
+  return Number(result.changes) > 0;
+}
+
+export function deletePairingCodesForAgent(db: DatabaseSync, agentId: string): boolean {
+  return Number(db.prepare('DELETE FROM pairing_codes WHERE agent_id = ?').run(agentId).changes) > 0;
+}
+
+/** Fails in-flight commands for an agent and returns their ids for timer cleanup. */
+export function failCommandsForAgent(db: DatabaseSync, agentId: string, reason: string): string[] {
+  const rows = db.prepare(
+    "SELECT id FROM commands WHERE agent_id = ? AND status IN ('pending', 'sent')"
+  ).all(agentId) as Array<{ id: string }>;
+  if (!rows.length) return [];
+
+  db.prepare(`
+    UPDATE commands SET status = 'failed', error = ?, updated_at = ?
+    WHERE agent_id = ? AND status IN ('pending', 'sent')
+  `).run(reason, new Date().toISOString(), agentId);
+  return rows.map((row) => String(row.id));
 }
 
 export function getLastEventAt(db: DatabaseSync): string | null {

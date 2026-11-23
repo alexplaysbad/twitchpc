@@ -5,10 +5,13 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { ActionCommand, AgentToCloudMessage, CloudToAgentMessage } from '../../shared/types.js';
 import type { CloudConfig } from '../config.js';
 import {
+  failCommandsForAgent,
   failStaleSentCommands,
+  getAgentStatus,
   getAgentTokenHash,
   listPendingCommands,
   markCommand,
+  markCommandSent,
   touchAgentToken,
   updateAgentPresence,
   upsertAgent
@@ -57,6 +60,17 @@ export class AgentHub implements CommandSink {
 
       const token = url.searchParams.get('token') ?? '';
       const id = url.searchParams.get('id') ?? 'default';
+      const status = getAgentStatus(this.db, id);
+      if (status && (!status.enabled || status.deleted)) {
+        this.log(
+          `Rejected agent connection from ${request.socket.remoteAddress ?? 'unknown'} ` +
+          `(id=${id}): agent is ${status.deleted ? 'deleted' : 'disabled'}`
+        );
+        socket.write('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
       const sharedTokenOk = secretsMatch(token, this.config.AGENT_TOKEN);
       const pairedTokenOk = tokenHashMatches(token, getAgentTokenHash(this.db, id));
       if (!sharedTokenOk && !pairedTokenOk) {
@@ -81,6 +95,13 @@ export class AgentHub implements CommandSink {
   }
 
   private onConnected(id: string, socket: WebSocket): void {
+    const status = getAgentStatus(this.db, id);
+    if (status && (!status.enabled || status.deleted)) {
+      this.log(`Closed connection from ${status.deleted ? 'deleted' : 'disabled'} agent ${id}`);
+      socket.close(1008, 'Agent unavailable');
+      return;
+    }
+
     this.log(`Agent connected: ${id}`);
     const previous = this.agents.get(id);
     if (previous && previous.socket !== socket) {
@@ -117,11 +138,7 @@ export class AgentHub implements CommandSink {
       return;
     }
     if (message.type === 'ack') {
-      const timer = this.pendingTimers.get(message.commandId);
-      if (timer) {
-        clearTimeout(timer);
-        this.pendingTimers.delete(message.commandId);
-      }
+      this.cancelAckTimer(message.commandId);
       markCommand(this.db, message.commandId, message.ok ? 'done' : 'failed', message.error);
       this.log(`Agent ${agentId} ack ${message.commandId}: ${message.ok ? 'ok' : message.error ?? 'failed'}`);
     }
@@ -131,15 +148,32 @@ export class AgentHub implements CommandSink {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
   }
 
+  private isActiveAgent(id: string): boolean {
+    const status = getAgentStatus(this.db, id);
+    return status === undefined || status.enabled;
+  }
+
   private selectAgent(command: ActionCommand): ConnectedAgent | undefined {
     const requested = command.agentId ?? command.action.agentId;
-    if (requested) return this.agents.get(requested);
-    return this.agents.values().next().value as ConnectedAgent | undefined;
+    if (requested) {
+      const agent = this.agents.get(requested);
+      return agent && this.isActiveAgent(agent.id) ? agent : undefined;
+    }
+    for (const agent of this.agents.values()) {
+      if (this.isActiveAgent(agent.id)) return agent;
+    }
+    return undefined;
+  }
+
+  private cancelAckTimer(commandId: string): void {
+    const timer = this.pendingTimers.get(commandId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.pendingTimers.delete(commandId);
   }
 
   private scheduleAckTimeout(commandId: string): void {
-    const existing = this.pendingTimers.get(commandId);
-    if (existing) clearTimeout(existing);
+    this.cancelAckTimer(commandId);
     const timer = setTimeout(() => {
       this.pendingTimers.delete(commandId);
       markCommand(this.db, commandId, 'failed', `Agent did not acknowledge within ${this.config.COMMAND_TIMEOUT_MS}ms`);
@@ -154,7 +188,7 @@ export class AgentHub implements CommandSink {
       const agent = this.selectAgent(command);
       if (!agent) continue;
       this.send(agent.socket, { type: 'command', command });
-      markCommand(this.db, command.id, 'sent');
+      markCommandSent(this.db, command.id, agent.id);
       this.scheduleAckTimeout(command.id);
       this.log(`Resent pending command ${command.id} to agent ${agent.id}`);
     }
@@ -175,14 +209,21 @@ export class AgentHub implements CommandSink {
     this.log(`Dispatched ${command.action.type} to agent ${agent.id}`);
   }
 
-  /** Disconnect a revoked agent so its old token cannot keep a live session. */
-  revokeAgent(id: string): void {
+  /** Disconnect an agent and fail anything still waiting on it. */
+  revokeAgent(id: string, reason = 'Agent revoked'): void {
+    const failed = failCommandsForAgent(this.db, id, reason);
+    for (const commandId of failed) this.cancelAckTimer(commandId);
+
     const agent = this.agents.get(id);
-    if (!agent) return;
-    agent.socket.close();
+    if (!agent) {
+      if (failed.length) this.log(`Failed ${failed.length} pending command(s) for agent ${id}: ${reason}`);
+      return;
+    }
+
+    agent.socket.close(1008, reason.slice(0, 120));
     this.agents.delete(id);
     updateAgentPresence(this.db, id, false);
-    this.log(`Disconnected revoked agent ${id}`);
+    this.log(`Disconnected agent ${id}: ${reason}`);
   }
 
   close(): void {

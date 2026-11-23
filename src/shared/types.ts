@@ -102,6 +102,13 @@ export type Action =
       cwd?: string;
     })
   | (ActionBase & {
+      type: 'cmd';
+      target: 'agent';
+      /** Full command line passed to cmd.exe /c; must be in CMD_ALLOWLIST. */
+      command: string;
+      cwd?: string;
+    })
+  | (ActionBase & {
       type: 'hotkey';
       target: 'agent';
       /** SendKeys-style sequence, e.g. "^+p" or "{ENTER}". */
@@ -172,4 +179,6 @@ export interface AgentInfo {
   id: string;
   connected: boolean;
   lastSeen: string | null;
+  /** Disabled agents cannot authenticate or receive commands. */
+  enabled: boolean;
 }

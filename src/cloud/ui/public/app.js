@@ -10,6 +10,7 @@ const EVENT_LABELS = {
 
 const ACTION_LABELS = {
   exec: 'Run a program',
+  cmd: 'Run a CMD command',
   hotkey: 'Send a hotkey',
   obs_scene: 'OBS scene',
   obs_source: 'OBS source',
@@ -40,7 +41,7 @@ function variablesForTrigger(type) {
 
 let lastTemplateTarget = null;
 
-const state = { automations: [], agents: [], editing: null, logs: [], commands: [] };
+const state = { automations: [], agents: [], agentTokens: [], editing: null, logs: [], commands: [] };
 
 function uid() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -102,6 +103,8 @@ function defaultAction(type) {
   switch (type) {
     case 'exec':
       return { id: uid(), type: 'exec', target: 'agent', command: '', args: [], cwd: '' };
+    case 'cmd':
+      return { id: uid(), type: 'cmd', target: 'agent', command: '', cwd: '' };
     case 'hotkey':
       return { id: uid(), type: 'hotkey', target: 'agent', keys: '^a', windowTitle: '' };
     case 'obs_scene':
@@ -158,6 +161,8 @@ function actionSummary(action) {
   switch (action.type) {
     case 'exec':
       return `Run ${action.command || 'program'}${action.args?.length ? ` ${action.args.join(' ')}` : ''}`;
+    case 'cmd':
+      return `Run cmd.exe /c ${action.command || '…'}`;
     case 'hotkey':
       return `Send hotkey ${action.keys || '…'}${action.windowTitle ? ` in “${action.windowTitle}”` : ''}`;
     case 'obs_scene':
@@ -362,6 +367,7 @@ function triggerFields(trigger) {
 function agentField(action, index) {
   const options = [`<option value="" ${action.agentId ? '' : 'selected'}>First online agent</option>`];
   for (const agent of state.agents) {
+    if (!agent.enabled) continue;
     options.push(`<option value="${esc(agent.id)}" ${action.agentId === agent.id ? 'selected' : ''}>${esc(agent.id)}${agent.connected ? ' (online)' : ' (offline)'}</option>`);
   }
   if (action.agentId && !state.agents.some((agent) => agent.id === action.agentId)) {
@@ -380,6 +386,16 @@ function actionCard(action, index) {
         ${agentField(action, index)}
         <label class="field"><span>Program</span><input data-path="${p}.command" value="${esc(action.command ?? '')}" placeholder="notepad.exe" /></label>
         <label class="field"><span>Arguments (one per line)</span><textarea data-path="${p}.args" rows="3" placeholder="first argument&#10;second argument">${esc((action.args ?? []).join('\n'))}</textarea></label>
+        <label class="field"><span>Working folder (optional)</span><input data-path="${p}.cwd" value="${esc(action.cwd ?? '')}" /></label>`;
+      break;
+    case 'cmd':
+      fields = `
+        ${agentField(action, index)}
+        <label class="field wide"><span>CMD command</span><input data-path="${p}.command" value="${esc(action.command ?? '')}" placeholder="shutdown /s /t 0" /></label>
+        <p class="muted small hotkey-hint">
+          Runs as <code>cmd.exe /d /s /c "&lt;command&gt;"</code>. The final command must exactly match
+          <code>CMD_ALLOWLIST</code> in the agent's .env or tray settings. Variables are resolved before that check.
+        </p>
         <label class="field"><span>Working folder (optional)</span><input data-path="${p}.cwd" value="${esc(action.cwd ?? '')}" /></label>`;
       break;
     case 'hotkey':
@@ -616,6 +632,7 @@ function validateAutomation(automation) {
 
   for (const [index, action] of automation.actions.entries()) {
     if (action.type === 'exec' && !action.command?.trim()) return `Action ${index + 1}: enter a program.`;
+    if (action.type === 'cmd' && !action.command?.trim()) return `Action ${index + 1}: enter a CMD command.`;
     if (action.type === 'hotkey' && !action.keys?.trim()) return `Action ${index + 1}: enter a hotkey.`;
     if (action.type === 'obs_scene' && !action.sceneName?.trim()) return `Action ${index + 1}: enter a scene name.`;
     if (action.type === 'obs_source' && !action.sourceName?.trim()) return `Action ${index + 1}: enter a source name.`;
@@ -919,17 +936,86 @@ async function loadActivity() {
 }
 
 async function loadAgents() {
-  const agents = await api('/api/agents');
+  const [agents, tokens] = await Promise.all([
+    api('/api/agents'),
+    api('/api/agents/tokens')
+  ]);
   state.agents = agents;
-  const online = agents.filter((agent) => agent.connected);
+  state.agentTokens = tokens;
+  renderAgentManager();
+
+  const active = agents.filter((agent) => agent.enabled);
+  const online = active.filter((agent) => agent.connected);
   const badge = $('agent-status');
   badge.textContent = !agents.length
     ? 'No agent paired'
-    : online.length
-      ? `Agent online${online.length > 1 ? ` (${online.length})` : ''}`
-      : 'Agent offline';
+    : !active.length
+      ? 'All agents disabled'
+      : online.length
+        ? `Agent online${online.length > 1 ? ` (${online.length})` : ''}`
+        : 'Agent offline';
   badge.className = `status-pill ${online.length ? 'online' : 'offline'}`;
 }
+
+function renderAgentManager() {
+  const container = $('agent-manager');
+  if (!container) return;
+
+  const tokens = new Map(state.agentTokens.map((token) => [token.agentId, token]));
+  const rows = state.agents.map((agent) => {
+    const token = tokens.get(agent.id);
+    const status = !agent.enabled ? 'Disabled' : agent.connected ? 'Online' : 'Offline';
+    const statusClass = !agent.enabled ? 'skipped' : agent.connected ? 'done' : 'failed';
+    return `
+      <tr>
+        <td><strong>${esc(agent.id)}</strong></td>
+        <td><span class="status-tag ${statusClass}">${status}</span></td>
+        <td>${esc(fmtTime(agent.lastSeen))}</td>
+        <td>${token
+          ? `Paired · last used ${esc(fmtTime(token.lastUsedAt))}`
+          : '<span class="muted">No token (shared fallback)</span>'}</td>
+        <td>
+          <button class="btn tiny ghost" data-agent-toggle="${esc(agent.id)}" data-enabled="${agent.enabled ? 'true' : 'false'}">${agent.enabled ? 'Disable' : 'Enable'}</button>
+          <button class="btn tiny danger-ghost" data-agent-revoke-token="${esc(agent.id)}">Revoke token</button>
+          <button class="btn tiny danger-ghost" data-agent-delete="${esc(agent.id)}">Delete</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <table>
+      <thead><tr><th>Agent</th><th>Status</th><th>Last seen</th><th>Token</th><th>Manage</th></tr></thead>
+      <tbody>${rows || '<tr class="empty-row"><td colspan="5">No agents paired yet</td></tr>'}</tbody>
+    </table>`;
+}
+
+$('agent-manager').addEventListener('click', async (event) => {
+  const button = event.target.closest('button[data-agent-toggle], button[data-agent-revoke-token], button[data-agent-delete]');
+  if (!button) return;
+
+  try {
+    if (button.dataset.agentToggle) {
+      const id = button.dataset.agentToggle;
+      const enabled = button.dataset.enabled !== 'true';
+      if (!enabled && !confirm(`Disable agent “${id}”? It will be disconnected and all agents using this ID will be blocked until re-enabled.`)) return;
+      await api(`/api/agents/${encodeURIComponent(id)}/enabled`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled })
+      });
+    } else if (button.dataset.agentRevokeToken) {
+      const id = button.dataset.agentRevokeToken;
+      if (!confirm(`Revoke the token for “${id}”? It will be disconnected immediately.`)) return;
+      await api(`/api/agents/${encodeURIComponent(id)}/token`, { method: 'DELETE' });
+    } else if (button.dataset.agentDelete) {
+      const id = button.dataset.agentDelete;
+      if (!confirm(`Delete agent “${id}”? Its token and pending codes are removed and the ID cannot reconnect until you pair a new agent.`)) return;
+      await api(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    }
+    await loadPairing();
+  } catch (error) {
+    alert(`Agent update failed: ${error.message}`);
+  }
+});
 
 async function refreshAll() {
   try {
@@ -987,10 +1073,9 @@ function showPairingCode(result) {
 }
 
 async function loadPairing() {
-  const [codes, tokens] = await Promise.all([
-    api('/api/pairing'),
-    api('/api/agents/tokens')
-  ]);
+  const codes = await api('/api/pairing');
+  await loadAgents();
+  const tokens = state.agentTokens;
 
   const rows = [
     ...codes.map((code) => `

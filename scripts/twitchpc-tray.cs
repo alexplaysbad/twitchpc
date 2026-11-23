@@ -34,6 +34,8 @@ namespace TwitchPC
             new Field("AGENT_TOKEN", "Agent token (saved after pairing)", true),
             new Field("AGENT_CONTROL_PORT", "Local control port (default 4310)"),
             new Field("EXEC_ALLOWLIST", "Allowed executables (comma-separated)"),
+            new Field("CMD_ALLOWLIST", "Allowed cmd.exe commands (separate with |)"),
+            new Field("CMD_TIMEOUT_MS", "cmd timeout in ms (default 15000)"),
             new Field("OBS_WS_URL", "OBS WebSocket URL"),
             new Field("OBS_PASSWORD", "OBS password", true),
             new Field("HEARTBEAT_INTERVAL_MS", "Heartbeat interval (ms)"),

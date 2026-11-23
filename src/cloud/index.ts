@@ -79,7 +79,13 @@ async function main(): Promise<void> {
   };
 
   app.get('/', async (_request, reply) => reply.redirect('/ui/'));
-  registerApiRoutes(app, { config, db, executor, health, revokeAgent: (id) => hub.revokeAgent(id) });
+  registerApiRoutes(app, {
+    config,
+    db,
+    executor,
+    health,
+    revokeAgent: (id, reason) => hub.revokeAgent(id, reason)
+  });
   hub.attach(app.server);
 
   await app.listen({ port: config.PORT, host: config.HOST });

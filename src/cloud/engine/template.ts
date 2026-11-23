@@ -42,6 +42,12 @@ export function renderAction(action: Action, event: TwitchEvent): Action {
         args: action.args.map(r),
         cwd: action.cwd === undefined ? undefined : r(action.cwd)
       };
+    case 'cmd':
+      return {
+        ...action,
+        command: r(action.command),
+        cwd: action.cwd === undefined ? undefined : r(action.cwd)
+      };
     case 'hotkey':
       return {
         ...action,

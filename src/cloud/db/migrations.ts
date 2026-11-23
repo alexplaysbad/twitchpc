@@ -49,6 +49,15 @@ export const MIGRATIONS: Migration[] = [
       );
       CREATE INDEX IF NOT EXISTS idx_pairing_codes_expires ON pairing_codes(expires_at);
     `
+  },
+  {
+    version: 4,
+    name: 'agent-management',
+    sql: `
+      ALTER TABLE agents ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE agents ADD COLUMN deleted_at TEXT;
+      CREATE INDEX IF NOT EXISTS idx_agents_deleted ON agents(deleted_at);
+    `
   }
 ];
 

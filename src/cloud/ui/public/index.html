@@ -58,8 +58,8 @@
     <section id="pairing-card" class="card hidden">
       <div class="section-head">
         <div>
-          <h2>Pair an agent</h2>
-          <p class="subtitle">Generate a one-time code, then set <code>PAIRING_CODE</code> in the agent's .env and start it.</p>
+          <h2>Agent manager</h2>
+          <p class="subtitle">Pair, disable, re-enable, or delete agents. Disabled and deleted agents cannot connect.</p>
         </div>
         <button id="pairing-close" class="btn ghost">Close</button>
       </div>
@@ -82,6 +82,9 @@
           Add the snippet to the .env file next to twitchpc-agent.exe, then start the agent. The code expires in 10 minutes and works once.
         </p>
       </div>
+      <h3 style="margin:18px 0 8px;">Paired agents</h3>
+      <div id="agent-manager" class="table-wrap"></div>
+      <h3 style="margin:18px 0 8px;">Pairing codes & tokens</h3>
       <div id="pairing-list" class="pairing-list"></div>
     </section>
 

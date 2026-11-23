@@ -16,6 +16,21 @@ describe('templates', () => {
     expect(renderTemplate('{{missing.path}}end', event)).toBe('end');
   });
 
+  it('renders cmd fields', () => {
+    const action = {
+      id: 'a2',
+      type: 'cmd' as const,
+      target: 'agent' as const,
+      command: 'shutdown /s /t {{data.bits}}',
+      cwd: 'C:/Users/{{user.login}}'
+    };
+    expect(renderAction(action, event)).toEqual({
+      ...action,
+      command: 'shutdown /s /t 250',
+      cwd: 'C:/Users/viewer'
+    });
+  });
+
   it('renders webhook fields', () => {
     const action = {
       id: 'a1',

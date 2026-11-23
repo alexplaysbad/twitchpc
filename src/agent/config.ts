@@ -8,6 +8,12 @@ const schema = z.object({
   PAIRING_CODE: z.string().default(''),
   /** Comma-separated executable names/paths the cloud is allowed to launch. */
   EXEC_ALLOWLIST: z.string().default(''),
+  /**
+   * Exact command lines the cloud may send to cmd.exe. Separate entries with
+   * `|` or newlines so commands containing commas still work.
+   */
+  CMD_ALLOWLIST: z.string().default(''),
+  CMD_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
   OBS_WS_URL: z.string().default('ws://localhost:4455'),
   OBS_PASSWORD: z.string().default(''),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(15000),
@@ -39,6 +45,13 @@ export function loadAgentConfig(env: NodeJS.ProcessEnv = process.env): AgentConf
 
 export function allowedExecutables(config: AgentConfig): string[] {
   return config.EXEC_ALLOWLIST.split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+/** Parses exact cmd.exe command lines from `CMD_ALLOWLIST`. */
+export function allowedCmdCommands(config: AgentConfig): string[] {
+  return config.CMD_ALLOWLIST.split(/[|\r\n]+/)
     .map((entry) => entry.trim())
     .filter(Boolean);
 }
