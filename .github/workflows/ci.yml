@@ -40,3 +40,5 @@ jobs:
           name: twitchpc-agent-${{ github.sha }}
           path: release/
           if-no-files-found: error
+          # .env.example starts with a dot; upload-artifact skips hidden files by default.
+          include-hidden-files: true
