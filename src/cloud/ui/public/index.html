@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TwitchPC Control</title>
+  <script>
+    // Apply the saved theme before styles load to avoid a light flash.
+    try {
+      if (localStorage.getItem('twitchpc-theme') === 'dark') document.documentElement.dataset.theme = 'dark';
+    } catch {
+      // localStorage is optional; the toggle still works for this session.
+    }
+  </script>
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">TP</span>
+      <div>
+        <h1>TwitchPC</h1>
+        <p>Twitch events → PC actions</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <span id="agent-status" class="status-pill">Checking agent…</span>
+      <details class="settings">
+        <summary>Settings</summary>
+        <label class="field">
+          <span>Admin token</span>
+          <input id="admin-token" type="password" placeholder="optional" autocomplete="off" />
+        </label>
+      </details>
+      <button id="pair-agent" class="btn secondary">Pair agent</button>
+      <button id="theme-toggle" class="btn ghost" aria-label="Toggle dark mode">Dark mode</button>
+      <button id="refresh" class="btn ghost">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h2>Automations <span id="automation-count" class="count">0</span></h2>
+          <p class="subtitle">When something happens in chat, run an action on the PC.</p>
+        </div>
+        <div class="row" style="margin:0;">
+          <button id="import-automations" class="btn ghost">Import</button>
+          <button id="export-automations" class="btn ghost">Export</button>
+          <input id="import-file" type="file" accept="application/json" class="hidden" />
+          <button id="new-automation" class="btn primary">+ New automation</button>
+        </div>
+      </div>
+      <div id="automations" class="automation-list"></div>
+    </section>
+
+    <section id="pairing-card" class="card hidden">
+      <div class="section-head">
+        <div>
+          <h2>Pair an agent</h2>
+          <p class="subtitle">Generate a one-time code, then set <code>PAIRING_CODE</code> in the agent's .env and start it.</p>
+        </div>
+        <button id="pairing-close" class="btn ghost">Close</button>
+      </div>
+      <div class="pairing-layout">
+        <label class="field">
+          <span>Agent ID (optional)</span>
+          <input id="pair-agent-id" placeholder="stream-pc" autocomplete="off" />
+        </label>
+        <button id="generate-pairing" class="btn primary">Generate code</button>
+      </div>
+      <div id="pairing-result" class="pairing-result hidden">
+        <div class="code-box">
+          <div>
+            <span class="muted small">One-time code</span>
+            <div><code id="pairing-code"></code></div>
+          </div>
+          <button id="copy-pairing" class="btn ghost">Copy .env snippet</button>
+        </div>
+        <p class="muted small" id="pairing-instructions">
+          Add the snippet to the .env file next to twitchpc-agent.exe, then start the agent. The code expires in 10 minutes and works once.
+        </p>
+      </div>
+      <div id="pairing-list" class="pairing-list"></div>
+    </section>
+
+    <section id="builder-card" class="card hidden">
+      <div class="section-head">
+        <div>
+          <h2 id="builder-title">New automation</h2>
+          <p class="subtitle">Fill in the blanks — no JSON needed.</p>
+        </div>
+        <button id="builder-close" class="btn ghost">Close</button>
+      </div>
+      <div id="builder"></div>
+      <div class="builder-footer">
+        <button id="save-automation" class="btn primary">Save automation</button>
+        <span id="editor-status" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h2>Event simulator</h2>
+          <p class="subtitle">Pretend a Twitch event happened and see what matches.</p>
+        </div>
+      </div>
+      <div class="sim-layout">
+        <div class="sim-form">
+          <label class="field">
+            <span>Event type</span>
+            <select id="sim-type">
+              <option value="chat_command">Chat command</option>
+              <option value="channel_points">Channel points reward</option>
+              <option value="subscription">Subscription / resub</option>
+              <option value="gift_subscription">Gift subscription</option>
+              <option value="cheer">Bits / cheer</option>
+            </select>
+          </label>
+          <div id="sim-fields" class="field-grid"></div>
+          <div class="row">
+            <button id="simulate" class="btn secondary">Check matches</button>
+            <button id="simulate-execute" class="btn primary">Run for real</button>
+          </div>
+          <p class="muted small">“Check matches” changes nothing. “Run for real” sends actions to the agent.</p>
+        </div>
+        <div class="result-pane">
+          <div id="sim-result" class="result-empty">Choose an event and press <strong>Check matches</strong>.</div>
+          <details class="advanced">
+            <summary>Raw response</summary>
+            <pre id="sim-raw"></pre>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h2>Activity</h2>
+          <p class="subtitle">A live look at what came in and what was sent.</p>
+        </div>
+        <span class="muted small">Auto-refreshes every 5 seconds</span>
+      </div>
+      <div class="activity-grid">
+        <div class="activity-panel">
+          <h3>Recent events</h3>
+          <div id="logs" class="table-wrap"></div>
+        </div>
+        <div class="activity-panel">
+          <h3>Recent commands</h3>
+          <div id="commands" class="table-wrap"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/ui/app.js"></script>
+</body>
+</html>

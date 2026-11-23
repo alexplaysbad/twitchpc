@@ -1,0 +1,48 @@
+{
+  "name": "twitchpc",
+  "version": "0.1.0",
+  "description": "Cloud control plane and local Windows agent for Twitch-driven automations",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "dev:cloud": "tsx watch src/cloud/index.ts",
+    "dev:agent": "tsx watch src/agent/index.ts",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "build:exe": "node scripts/build-exe.mjs",
+    "start:cloud": "node dist/cloud/index.js",
+    "start:agent": "node dist/agent/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "token:user": "node scripts/get-token.mjs --kind=user",
+    "token:bot": "node scripts/get-token.mjs --kind=bot"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.12",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.12.8",
+    "obs-websocket-js": "^5.0.8",
+    "tmi.js": "^1.8.5",
+    "ws": "^8.18.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/tmi.js": "^1.8.6",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6",
+    "selfsigned": "^5.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  },
+  "keywords": [
+    "twitch",
+    "automation",
+    "eventsub",
+    "obs"
+  ],
+  "license": "ISC"
+}
