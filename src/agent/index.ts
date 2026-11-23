@@ -6,7 +6,7 @@ import { HotkeyHandler } from './actions/hotkey.js';
 import { ObsHandler } from './actions/obs.js';
 import { allowedExecutables, loadAgentConfig } from './config.js';
 import { AgentControl } from './control.js';
-import { agentEnvPath, isStandaloneAgent, pairIfNeeded } from './pairing.js';
+import { agentEnvPath, exchangePairingCode, isStandaloneAgent, pairIfNeeded, updateAgentEnv } from './pairing.js';
 import { checkForUpdate, localUpdateInfo } from './update.js';
 
 // When running as a packaged .exe, prefer a .env sitting next to the exe so the
@@ -19,11 +19,47 @@ const log = (message: string): void => console.log(`[${new Date().toISOString()}
 const version = localUpdateInfo();
 
 let control: AgentControl | undefined;
+let currentSocket: WebSocket | undefined;
+let reconnectTimer: NodeJS.Timeout | undefined;
+let stopping = false;
+
+const clearReconnect = (): void => {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = undefined;
+};
+
 const shutdown = (): void => {
+  stopping = true;
+  clearReconnect();
   control?.close();
   process.exit(0);
 };
+
 control = new AgentControl(config, version, log, shutdown);
+control.setPairHandler(async (code, cloudUrl) => {
+  if (cloudUrl) {
+    try {
+      // Validate before saving so a typo does not overwrite a working URL.
+      const parsed = new URL(cloudUrl);
+      if (!['ws:', 'wss:'].includes(parsed.protocol)) throw new Error('Use ws:// or wss://');
+      config.CLOUD_URL = cloudUrl;
+      updateAgentEnv({ CLOUD_URL: cloudUrl });
+      log(`Cloud URL saved: ${cloudUrl}`);
+    } catch (error) {
+      throw new Error(`Invalid cloud URL: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const result = await exchangePairingCode(config, code, log);
+  clearReconnect();
+  control?.setNeedsPairing(false);
+  if (currentSocket) {
+    const oldSocket = currentSocket;
+    currentSocket = undefined;
+    oldSocket.close();
+  }
+  connect();
+  return { agentId: result.agentId };
+});
 control.listen();
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
@@ -47,13 +83,30 @@ async function executeAction(action: Action): Promise<void> {
   }
 }
 
+function scheduleReconnect(): void {
+  if (stopping) return;
+  clearReconnect();
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    connect();
+  }, config.RECONNECT_DELAY_MS);
+  reconnectTimer.unref();
+}
+
 function connect(): void {
+  clearReconnect();
+  if (currentSocket && (
+    currentSocket.readyState === WebSocket.OPEN ||
+    currentSocket.readyState === WebSocket.CONNECTING
+  )) return;
+
   const url = new URL(config.CLOUD_URL);
   url.searchParams.set('id', config.AGENT_ID);
   url.searchParams.set('token', config.AGENT_TOKEN);
 
   log(`Agent ${config.AGENT_ID} connecting to ${url.origin}${url.pathname}`);
   const socket = new WebSocket(url);
+  currentSocket = socket;
   let heartbeat: NodeJS.Timeout | undefined;
 
   const send = (message: AgentToCloudMessage): void => {
@@ -63,6 +116,7 @@ function connect(): void {
   socket.on('open', () => {
     log('Connected to cloud');
     control?.setConnected(true);
+    control?.setNeedsPairing(false);
     heartbeat = setInterval(() => {
       send({ type: 'heartbeat', agentId: config.AGENT_ID, at: new Date().toISOString() });
     }, config.HEARTBEAT_INTERVAL_MS);
@@ -107,15 +161,19 @@ function connect(): void {
   socket.on('error', (error) => {
     log(`Socket error: ${error.message}`);
     if (error.message.includes('401')) {
+      control?.setNeedsPairing(true);
       log('Cloud rejected the connection: this agent token is unknown or revoked. ' +
-          'Generate a new code in the dashboard (or check AGENT_TOKEN in the .env file next to this agent).');
+          'Enter a fresh pairing code in the tray app (or check AGENT_TOKEN in the .env file next to this agent).');
     }
   });
   socket.on('close', () => {
     if (heartbeat) clearInterval(heartbeat);
+    // A newer socket (e.g. after tray pairing) has replaced this one.
+    if (currentSocket !== socket) return;
+    currentSocket = undefined;
     control?.setConnected(false);
     log(`Disconnected; retrying in ${config.RECONNECT_DELAY_MS / 1000}s`);
-    setTimeout(connect, config.RECONNECT_DELAY_MS);
+    scheduleReconnect();
   });
 }
 

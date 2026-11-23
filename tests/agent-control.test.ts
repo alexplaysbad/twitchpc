@@ -55,11 +55,18 @@ describe('agent local control API', () => {
       () => {},
       () => { shutdowns += 1; }
     );
+    let receivedCloudUrl: string | undefined;
+    control.setPairHandler(async (code, cloudUrl) => {
+      if (code !== 'AA11BB22') throw new Error('Bad code');
+      receivedCloudUrl = cloudUrl;
+      return { agentId: 'paired-pc' };
+    });
     control.listen();
 
     expect(await waitForStatus(base)).toMatchObject({
       connected: false,
       configured: true,
+      needsPairing: false,
       paused: false,
       agentId: 'test-pc',
       version: '0.0.0-test'
@@ -80,6 +87,25 @@ describe('agent local control API', () => {
     expect(control.isPaused()).toBe(false);
 
     expect((await fetch(`${base}/missing`)).status).toBe(404);
+
+    control.setNeedsPairing(true);
+    expect((await waitForStatus(base)).needsPairing).toBe(true);
+
+    const invalid = await fetch(`${base}/pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'NOPE' })
+    });
+    expect(invalid.status).toBe(400);
+
+    const paired = await fetch(`${base}/pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'AA11BB22', cloudUrl: 'ws://example.test:3000/agent' })
+    });
+    expect(await paired.json()).toEqual({ ok: true, agentId: 'paired-pc' });
+    expect(receivedCloudUrl).toBe('ws://example.test:3000/agent');
+    expect((await waitForStatus(base)).needsPairing).toBe(false);
 
     await fetch(`${base}/shutdown`, { method: 'POST' });
     await new Promise((resolve) => setTimeout(resolve, 20));

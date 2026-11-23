@@ -76,14 +76,14 @@ function setPath(obj, path, value) {
 
 async function api(path, options = {}) {
   const token = $('admin-token').value.trim();
-  const response = await fetch(path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers ?? {})
-    }
-  });
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers ?? {})
+  };
+  if (options.body !== undefined && !headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {
@@ -981,8 +981,9 @@ function showPairingCode(result) {
   $('pairing-code').textContent = result.code;
   $('pairing-result').classList.remove('hidden');
   $('pairing-instructions').textContent =
-    `Agent ID: ${result.agentId}. Add the snippet to the .env file next to twitchpc-agent.exe, ` +
-    `then start the agent. This code expires at ${fmtTime(result.expiresAt)} and works once.`;
+    `Agent ID: ${result.agentId}. Paste this code into the tray app when it asks, ` +
+    `or add the snippet to the .env file next to twitchpc-agent.exe. ` +
+    `It expires at ${fmtTime(result.expiresAt)} and works once.`;
 }
 
 async function loadPairing() {
@@ -1071,8 +1072,8 @@ $('generate-pairing').onclick = () => void generatePairing();
 $('copy-pairing').onclick = async () => {
   const ok = await copyText(pairingSnippet());
   $('pairing-instructions').textContent = ok
-    ? 'Snippet copied. Paste it into the .env file next to twitchpc-agent.exe and start the agent.'
-    : 'Copy failed; select the code above and paste it into the agent .env manually.';
+    ? 'Code copied. Paste it into the tray app prompt, or add the snippet to the agent .env and restart it.'
+    : 'Copy failed; select the code above and paste it into the tray prompt manually.';
 };
 $('pairing-list').addEventListener('click', async (event) => {
   const target = event.target instanceof Element ? event.target : null;

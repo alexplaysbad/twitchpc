@@ -138,10 +138,12 @@ You no longer have to copy a shared secret by hand:
 
 1. Open the dashboard and click **Pair agent**.
 2. Optionally enter an **Agent ID** (e.g. `stream-pc`). Click **Generate code**.
-3. Copy the `.env` snippet into the agent's `.env` file (next to `twitchpc-agent.exe`). It contains `AGENT_ID` and `PAIRING_CODE`.
-4. Start the agent. It exchanges the code for a unique token, writes `AGENT_TOKEN` back into that `.env` file, clears `PAIRING_CODE`, and connects.
+3. In the tray app, paste the code into the pairing prompt that appears automatically when the agent has no token or its token was revoked. You can also right-click the tray icon → **Enter pairing code...** at any time.
+4. The agent exchanges the code immediately: it saves a unique `AGENT_TOKEN` into its `.env`, clears `PAIRING_CODE`, and reconnects **without a restart**.
 
-Codes expire after 10 minutes and work exactly once. Use the **Revoke** buttons in the pairing panel to invalidate an unused code or an existing agent token. The old shared `AGENT_TOKEN` in the cloud `.env` still works as a fallback for existing installs; if it is set, any agent presenting that exact token can connect as any ID.
+If you prefer the file-based flow, copy the generated `AGENT_ID` / `PAIRING_CODE` snippet into the `.env` next to `twitchpc-agent.exe` and start the agent once. Codes expire after 10 minutes and work exactly once.
+
+Use the **Revoke** buttons in the dashboard pairing panel to invalidate an unused code or an existing agent token. Revoking a token disconnects that agent right away; its tray app will ask for a fresh code on the next poll. The old shared `AGENT_TOKEN` in the cloud `.env` still works as a fallback for existing installs; if it is set, any agent presenting that exact token can connect as any ID.
 
 ### Troubleshooting: agent says `unexpected server response: 401`
 

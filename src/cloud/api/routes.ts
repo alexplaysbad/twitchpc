@@ -145,6 +145,21 @@ interface RouteDeps {
 export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, db, executor, health, revokeAgent } = deps;
 
+  // Some clients send Content-Type: application/json on bodyless DELETEs. Treat
+  // an empty body as {} so revoke buttons never fail with a 400 parse error.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_request, body, done) => {
+    const text = String(body ?? '').trim();
+    if (!text) {
+      done(null, {});
+      return;
+    }
+    try {
+      done(null, JSON.parse(text));
+    } catch (error) {
+      done(error as Error, undefined);
+    }
+  });
+
   app.get('/api/health', async () => ({
     ok: true,
     uptimeSeconds: Math.round(process.uptime()),
@@ -195,7 +210,10 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return reply.code(201).send({ agentId: pairing.agentId, token });
   });
 
-  app.get('/api/pairing', async () => listPairingCodes(db));
+  app.get('/api/pairing', async () => {
+    deleteExpiredPairingCodes(db);
+    return listPairingCodes(db);
+  });
 
   app.post('/api/pairing', async (request, reply) => {
     const input = pairingCreateInput.parse(request.body ?? {});

@@ -276,9 +276,9 @@ export function createPairingCode(db: DatabaseSync, record: PairingCodeRecord): 
 export function listPairingCodes(db: DatabaseSync): PairingCodeRecord[] {
   const rows = db.prepare(`
     SELECT * FROM pairing_codes
-    WHERE used_at IS NULL
+    WHERE used_at IS NULL AND expires_at > ?
     ORDER BY expires_at, created_at
-  `).all() as Row[];
+  `).all(new Date().toISOString()) as Row[];
   return rows.map(toPairingCode);
 }
 
@@ -315,8 +315,8 @@ export function consumePairingCode(db: DatabaseSync, code: string): PairingCodeR
   }
 }
 
-export function deletePairingCode(db: DatabaseSync, code: string): void {
-  db.prepare('DELETE FROM pairing_codes WHERE code = ?').run(code);
+export function deletePairingCode(db: DatabaseSync, code: string): boolean {
+  return db.prepare('DELETE FROM pairing_codes WHERE code = ?').run(code.toUpperCase()).changes > 0;
 }
 
 export function storeAgentToken(db: DatabaseSync, agentId: string, tokenHash: string): void {
@@ -334,8 +334,12 @@ export function getAgentTokenHash(db: DatabaseSync, agentId: string): string | u
   return row?.token_hash;
 }
 
-export function deleteAgentToken(db: DatabaseSync, agentId: string): void {
-  db.prepare('DELETE FROM agent_tokens WHERE agent_id = ?').run(agentId);
+export function deleteAgentToken(db: DatabaseSync, agentId: string): boolean {
+  const deleted = db.prepare('DELETE FROM agent_tokens WHERE agent_id = ?').run(agentId).changes > 0;
+  if (deleted) {
+    db.prepare("UPDATE agents SET token_hash = '', connected = 0 WHERE id = ?").run(agentId);
+  }
+  return deleted;
 }
 
 export function touchAgentToken(db: DatabaseSync, agentId: string): void {

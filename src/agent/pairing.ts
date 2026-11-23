@@ -8,6 +8,11 @@ interface PairResponse {
   token: string;
 }
 
+export interface PairResult {
+  agentId: string;
+  token: string;
+}
+
 /** Plain node.exe also ends in ".exe" on Windows, so check the actual name. */
 export function isStandaloneAgent(): boolean {
   return basename(process.execPath).toLowerCase() === 'twitchpc-agent.exe';
@@ -28,37 +33,46 @@ function setEnvValue(lines: string[], key: string, value: string): void {
   else lines[index] = assignment;
 }
 
-function persistPairing(agentId: string, token: string): string {
+/** Update or append values in the agent .env while preserving other lines. */
+export function updateAgentEnv(values: Record<string, string>): string {
   const path = agentEnvPath();
   const existing = existsSync(path) ? readFileSync(path, 'utf8') : '';
   const lines = existing.split(/\r?\n/).filter((line, index, all) =>
     !(index === all.length - 1 && line === ''));
-  setEnvValue(lines, 'AGENT_ID', agentId);
-  setEnvValue(lines, 'AGENT_TOKEN', token);
-  setEnvValue(lines, 'PAIRING_CODE', '');
+  for (const [key, value] of Object.entries(values)) {
+    setEnvValue(lines, key, value);
+  }
   writeFileSync(path, `${lines.join('\r\n')}\r\n`);
   return path;
 }
 
-/**
- * If the agent has no token yet, exchange the one-time code from the dashboard
- * for a per-agent token and save it in .env so future starts need no code.
- */
-export async function pairIfNeeded(config: AgentConfig, log: (message: string) => void): Promise<boolean> {
-  if (config.AGENT_TOKEN) return false;
-  if (!config.PAIRING_CODE) {
-    log('No AGENT_TOKEN found. Open the dashboard, generate a pairing code, ' +
-        'then set PAIRING_CODE in the agent .env (or copy AGENT_TOKEN manually).');
-    return false;
-  }
+function persistPairing(agentId: string, token: string): string {
+  return updateAgentEnv({
+    AGENT_ID: agentId,
+    AGENT_TOKEN: token,
+    PAIRING_CODE: ''
+  });
+}
 
-  const code = config.PAIRING_CODE.trim().toUpperCase();
+/**
+ * Exchange a one-time dashboard code for a per-agent token. Updates the in-memory
+ * config and the .env file, so this works at startup or from the tray app while
+ * the agent is already running.
+ */
+export async function exchangePairingCode(
+  config: AgentConfig,
+  code: string,
+  log: (message: string) => void
+): Promise<PairResult> {
+  const normalized = code.trim().toUpperCase();
+  if (!normalized) throw new Error('Enter a pairing code');
+
   const url = `${httpOrigin(config.CLOUD_URL)}/api/agent/pair`;
   log(`Exchanging pairing code with ${url}`);
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code: normalized }),
     signal: AbortSignal.timeout(15_000)
   });
 
@@ -72,5 +86,17 @@ export async function pairIfNeeded(config: AgentConfig, log: (message: string) =
   config.AGENT_TOKEN = body.token;
   config.PAIRING_CODE = '';
   log(`Paired as '${body.agentId}'. Token saved to ${path}. The code cannot be reused.`);
+  return { agentId: body.agentId, token: body.token };
+}
+
+/** Startup helper: pair only when a code was supplied and no token exists yet. */
+export async function pairIfNeeded(config: AgentConfig, log: (message: string) => void): Promise<boolean> {
+  if (config.AGENT_TOKEN) return false;
+  if (!config.PAIRING_CODE) {
+    log('No AGENT_TOKEN found. Enter the pairing code in the tray app, or set ' +
+        'PAIRING_CODE in the agent .env (or copy AGENT_TOKEN manually).');
+    return false;
+  }
+  await exchangePairingCode(config, config.PAIRING_CODE, log);
   return true;
 }
