@@ -114,6 +114,8 @@ const automationInput = z.object({
       username: z.string().optional(),
       minBits: z.number().int().nonnegative().optional(),
       minMonths: z.number().int().nonnegative().optional(),
+      minGiftAmount: z.number().int().nonnegative().optional(),
+      thresholdMode: z.enum(['highest', 'cumulative']).optional(),
       tiers: z.array(z.string()).optional()
     }).default({})
   }),

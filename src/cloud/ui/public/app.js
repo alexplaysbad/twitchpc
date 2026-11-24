@@ -140,9 +140,14 @@ function defaultAutomation() {
 function defaultFilters(type) {
   if (type === 'chat_command') return { command: 'test' };
   if (type === 'channel_points') return { rewardTitle: '' };
-  if (type === 'cheer') return { minBits: 100 };
-  if (type === 'subscription') return { minMonths: 1 };
+  if (type === 'cheer') return { minBits: 100, thresholdMode: 'highest' };
+  if (type === 'subscription') return { minMonths: 1, thresholdMode: 'highest' };
+  if (type === 'gift_subscription') return { minGiftAmount: 5, thresholdMode: 'highest' };
   return {};
+}
+
+function thresholdSummary(filters) {
+  return filters?.thresholdMode === 'cumulative' ? ' (also fire lower thresholds)' : '';
 }
 
 function triggerSummary(trigger) {
@@ -154,11 +159,11 @@ function triggerSummary(trigger) {
     case 'channel_points':
       return `reward “${f.rewardTitle || f.rewardId || '…'}” is redeemed${f.username ? ` by ${f.username}` : ''}`;
     case 'subscription':
-      return `a sub happens${f.minMonths ? ` (${f.minMonths}+ months)` : ''}${tiers ? ` · ${tiers}` : ''}`;
+      return `a sub happens${f.minMonths ? ` (${f.minMonths}+ months)` : ''}${tiers ? ` · ${tiers}` : ''}${thresholdSummary(f)}`;
     case 'gift_subscription':
-      return `gift subs are given${tiers ? ` · ${tiers}` : ''}`;
+      return `${f.minGiftAmount ?? 1}+ gift subs${tiers ? ` · ${tiers}` : ''}${thresholdSummary(f)}`;
     case 'cheer':
-      return `${f.minBits || 0}+ bits are cheered`;
+      return `${f.minBits || 0}+ bits are cheered${thresholdSummary(f)}`;
     default:
       return trigger?.type ?? 'unknown trigger';
   }
@@ -328,6 +333,19 @@ function closeBuilder() {
   state.editing = null;
 }
 
+function thresholdModeField(filters, path, label = 'Amount match') {
+  const mode = filters?.thresholdMode === 'cumulative' ? 'cumulative' : 'highest';
+  return `
+    <label class="field">
+      <span>${esc(label)}</span>
+      <select data-path="${path}">
+        <option value="highest" ${mode === 'highest' ? 'selected' : ''}>Only highest matching threshold</option>
+        <option value="cumulative" ${mode === 'cumulative' ? 'selected' : ''}>Also fire lower thresholds</option>
+      </select>
+    </label>
+    <p class="muted small" style="grid-column:1/-1;margin:-4px 0 0;">Highest: 11 gifted subs triggers 10, not 5. Cumulative: triggers 10 and 5.</p>`;
+}
+
 function tiersField(filters) {
   const selected = filters?.tiers ?? [];
   return `
@@ -358,14 +376,20 @@ function triggerFields(trigger) {
         ${user}`;
     case 'subscription':
       return `
-        <label class="field"><span>Minimum months (optional)</span><input type="number" min="0" data-path="trigger.filters.minMonths" value="${esc(f.minMonths ?? '')}" /></label>
+        <label class="field"><span>Minimum months</span><input type="number" min="0" data-path="trigger.filters.minMonths" value="${esc(f.minMonths ?? '')}" /></label>
+        ${thresholdModeField(f, 'trigger.filters.thresholdMode', 'Months match')}
         ${tiersField(f)}
         ${user}`;
     case 'gift_subscription':
-      return `${tiersField(f)}${user}`;
+      return `
+        <label class="field"><span>Minimum gifted subs</span><input type="number" min="1" data-path="trigger.filters.minGiftAmount" value="${esc(f.minGiftAmount ?? 1)}" placeholder="e.g. 5" /></label>
+        ${thresholdModeField(f, 'trigger.filters.thresholdMode', 'Gift amount match')}
+        ${tiersField(f)}
+        ${user}`;
     case 'cheer':
       return `
         <label class="field"><span>Minimum bits</span><input type="number" min="0" data-path="trigger.filters.minBits" value="${esc(f.minBits ?? '')}" placeholder="e.g. 100" /></label>
+        ${thresholdModeField(f, 'trigger.filters.thresholdMode', 'Bits match')}
         ${user}`;
     default:
       return user;
@@ -636,6 +660,9 @@ function validateAutomation(automation) {
   if (automation.trigger.type === 'channel_points' && !f.rewardTitle?.trim() && !f.rewardId?.trim()) {
     return 'Enter a reward title or reward ID.';
   }
+  if (automation.trigger.type === 'gift_subscription' && (!Number.isFinite(f.minGiftAmount) || f.minGiftAmount < 1)) {
+    return 'Enter a minimum gifted sub amount (1 or more).';
+  }
   if (!automation.actions?.length) return 'Add at least one action.';
 
   for (const [index, action] of automation.actions.entries()) {
@@ -740,7 +767,7 @@ function simFields(type) {
         <label class="field"><span>Tier</span><select data-sim-path="tier">
           ${Object.entries(TIER_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
         </select></label>
-        <label class="field"><span>How many</span><input type="number" min="1" data-sim-path="amount" value="1" /></label>
+        <label class="field"><span>How many gifted</span><input type="number" min="1" data-sim-path="amount" value="5" /></label>
         ${user}`;
     case 'cheer':
       return `

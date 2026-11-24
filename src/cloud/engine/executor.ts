@@ -11,7 +11,7 @@ import {
   recordAutomationTrigger,
   setSetting
 } from '../db/repositories.js';
-import { matches } from './matcher.js';
+import { matches, selectTriggeredAutomations } from './matcher.js';
 import { renderAction } from './template.js';
 
 /** Implemented by the agent hub: sends agent-targeted commands and marks them sent. */
@@ -55,8 +55,7 @@ export class RuleExecutor {
     const automations: Automation[] = listAutomations(this.db);
     const now = Date.now();
 
-    for (const automation of automations) {
-      if (!automation.enabled || !matches(automation.trigger, event)) continue;
+    for (const automation of selectTriggeredAutomations(automations, event)) {
       result.matched.push(automation.id);
 
       const cooldownKey = automation.cooldownPerUserSeconds

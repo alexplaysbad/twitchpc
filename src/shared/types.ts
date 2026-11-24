@@ -60,6 +60,8 @@ export type TwitchEvent =
   | EventBase<'cheer', CheerData>
   | EventBase<'chat_command', ChatCommandData>;
 
+export type ThresholdMatchMode = 'highest' | 'cumulative';
+
 export interface TriggerFilters {
   /** Channel points reward id (exact match). */
   rewardId?: string;
@@ -73,6 +75,13 @@ export interface TriggerFilters {
   minBits?: number;
   /** Minimum subscribed month count. */
   minMonths?: number;
+  /** Minimum number of gifted subs in one gift event. */
+  minGiftAmount?: number;
+  /**
+   * For amount thresholds (bits, months, gift amount): `highest` only fires the
+   * automation with the highest matching threshold; `cumulative` also fires lower ones.
+   */
+  thresholdMode?: ThresholdMatchMode;
   /** Allowed sub tiers: 1000, 2000, 3000. */
   tiers?: string[];
 }
