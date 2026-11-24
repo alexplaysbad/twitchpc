@@ -99,7 +99,7 @@ writeFileSync(
     '==============',
     '',
     '1. Copy .env.example to .env in this folder.',
-    '2. Fill in CLOUD_URL, EXEC_ALLOWLIST and OBS settings.',
+    '2. Fill in CLOUD_URL and OBS settings.',
     '3. In the cloud dashboard, click Pair agent and Generate code. The tray app',
     '   will ask for the code automatically. Paste it in and it saves its own',
     '   AGENT_TOKEN into this .env and connects without a restart.',

@@ -426,7 +426,7 @@ function actionCard(action, index) {
         <label class="field wide"><span>CMD command</span><input data-path="${p}.command" value="${esc(action.command ?? '')}" placeholder="shutdown /s /t 0" /></label>
         <p class="muted small hotkey-hint">
           Runs as <code>cmd.exe /d /s /c "&lt;command&gt;"</code>. The final command must exactly match
-          <code>CMD_ALLOWLIST</code> in the agent's .env or tray settings. Variables are resolved before that check.
+          Variables are resolved before the command is sent to the agent.
         </p>
         <label class="field"><span>Working folder (optional)</span><input data-path="${p}.cwd" value="${esc(action.cwd ?? '')}" /></label>`;
       break;

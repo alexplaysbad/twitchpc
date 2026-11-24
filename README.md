@@ -3,7 +3,7 @@
 A TypeScript backend for turning Twitch events into automations on a streamer's PC.
 
 - **Cloud control plane** — listens to Twitch EventSub (channel points, subs, gift subs, bits) and a chat bot (`!commands`), matches configurable rules, stores everything in SQLite, exposes a REST API and a minimal test UI, and forwards PC actions to the local agent.
-- **Local agent** — runs on the streamer's Windows PC, connects **outbound** to the cloud over WebSockets, and executes allowlisted `exec`/`cmd`/hotkey actions plus OBS scene/source control.
+- **Local agent** — runs on the streamer's Windows PC, connects **outbound** to the cloud over WebSockets, and executes `exec`/`cmd`/hotkey actions plus OBS scene/source control.
 - **Webhook action** — runs in the cloud. Use it as a generic hook to wire up your own overlay service (e.g. Pogly.GG); there is no overlay server in this project.
 
 ## Quick start
@@ -81,7 +81,7 @@ This creates a `release/` folder containing:
 
 - `TwitchPC Agent.exe` — the graphical system-tray app (no console window) that streamers should launch
 - `twitchpc-agent.exe` — the hidden agent engine with the Node runtime and dependencies bundled
-- `.env.example` — copy to `.env` in the same folder and fill in `CLOUD_URL`, `EXEC_ALLOWLIST`, `CMD_ALLOWLIST`, OBS settings, and either `PAIRING_CODE` or a matching `AGENT_TOKEN`
+- `.env.example` — copy to `.env` in the same folder and fill in `CLOUD_URL`, OBS settings, and either `PAIRING_CODE` or a matching `AGENT_TOKEN`
 - `install-agent.ps1` / `uninstall-agent.ps1` — optional hidden logon task + Start Menu installer
 - `version.json` — version + SHA-256 manifest used to auto-update the engine
 - `README.txt` — short instructions for the streamer
@@ -216,8 +216,7 @@ OBS_PASSWORD=your-password
 ## Security notes
 
 - The cloud can trigger code execution on the agent. Use WSS in production (`CLOUD_URL=wss://...`) and unique per-agent tokens from the pairing flow. The shared `AGENT_TOKEN` fallback is convenient but less isolated.
-- `EXEC_ALLOWLIST` is a comma-separated list of executable names/paths the agent will accept. Cloud rules must use one of those exact strings as the `command`.
-- `CMD_ALLOWLIST` is a list of **exact** `cmd.exe /c` command lines the agent will accept. Separate entries with `|` or newlines. Example: `CMD_ALLOWLIST=shutdown /s /t 0|shutdown /r /t 0`. The final rendered command is checked against the allowlist, so template values cannot escape it.
+- `CMD_TIMEOUT_MS` caps how long a cmd action may run before the agent kills it (default 15s). Output is captured for logs (first ~2KB).
 - `ADMIN_TOKEN` is generated automatically on first run if left empty; enter it in the UI's **Settings → Admin token** field.
 - Commands that are not acknowledged within `COMMAND_TIMEOUT_MS` (default 30s) are marked `failed`, including commands left in flight after a cloud restart.
 
@@ -252,14 +251,14 @@ Action types:
 
 | Type | Target | Description |
 | --- | --- | --- |
-| `exec` | agent | Launch an allowlisted executable with args |
-| `cmd` | agent | Run an exact allowlisted command line through `cmd.exe /c` (e.g. shutdown) |
+| `exec` | agent | Launch an executable with args |
+| `cmd` | agent | Run a command line through `cmd.exe /c` (e.g. shutdown) |
 | `hotkey` | agent | Send keys via PowerShell SendKeys, optionally focusing a window by title |
 | `obs_scene` | agent | Switch the current program scene |
 | `obs_source` | agent | Enable/disable a scene item |
 | `webhook` | cloud | HTTP POST/PUT/GET with templated URL, headers and body |
 
-Templates use `{{user.login}}`, `{{user.displayName}}`, `{{data.bits}}`, `{{data.rewardTitle}}`, etc. They work in all string action fields, so a webhook body can carry event data to your own overlay integration. For `cmd`, the **final rendered** command is checked against `CMD_ALLOWLIST`, so keep allowed entries as exact command lines.
+Templates use `{{user.login}}`, `{{user.displayName}}`, `{{data.bits}}`, `{{data.rewardTitle}}`, etc. They work in all string action fields, so a webhook body can carry event data to your own overlay integration.
 
 ## Dashboard
 

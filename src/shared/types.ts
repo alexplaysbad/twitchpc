@@ -105,7 +105,6 @@ export type Action =
   | (ActionBase & {
       type: 'exec';
       target: 'agent';
-      /** Must be present in the agent's EXEC_ALLOWLIST. */
       command: string;
       args: string[];
       cwd?: string;
@@ -113,7 +112,7 @@ export type Action =
   | (ActionBase & {
       type: 'cmd';
       target: 'agent';
-      /** Full command line passed to cmd.exe /c; must be in CMD_ALLOWLIST. */
+      /** Full command line passed to cmd.exe /c. */
       command: string;
       cwd?: string;
     })

@@ -5,7 +5,7 @@ import { CmdHandler } from './actions/cmd.js';
 import { ExecHandler } from './actions/exec.js';
 import { HotkeyHandler } from './actions/hotkey.js';
 import { ObsHandler } from './actions/obs.js';
-import { allowedCmdCommands, allowedExecutables, loadAgentConfig } from './config.js';
+import { loadAgentConfig } from './config.js';
 import { AgentControl } from './control.js';
 import { agentEnvPath, exchangePairingCode, isStandaloneAgent, pairIfNeeded, updateAgentEnv } from './pairing.js';
 import { checkForUpdate, localUpdateInfo } from './update.js';
@@ -65,8 +65,8 @@ control.listen();
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-const execHandler = new ExecHandler(allowedExecutables(config));
-const cmdHandler = new CmdHandler(allowedCmdCommands(config), config.CMD_TIMEOUT_MS);
+const execHandler = new ExecHandler();
+const cmdHandler = new CmdHandler(config.CMD_TIMEOUT_MS);
 const hotkeyHandler = new HotkeyHandler();
 const obsHandler = new ObsHandler(config);
 

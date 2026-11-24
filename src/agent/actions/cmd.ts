@@ -5,28 +5,13 @@ type CmdAction = Extract<Action, { type: 'cmd' }>;
 
 const MAX_OUTPUT = 2000;
 
-/**
- * Runs an exact, pre-approved command line through Windows cmd.exe.
- *
- * Nothing from the cloud is executed unless it matches CMD_ALLOWLIST on the
- * agent. Templates may fill in placeholders, but the final rendered string is
- * what gets checked, so a viewer cannot smuggle extra commands through a
- * variable.
- */
+/** Runs a command line through Windows cmd.exe. */
 export class CmdHandler {
-  constructor(
-    private readonly allowlist: string[],
-    private readonly timeoutMs: number
-  ) {}
+  constructor(private readonly timeoutMs: number) {}
 
   async execute(action: CmdAction): Promise<void> {
     const command = action.command.trim();
     if (!command) throw new Error('cmd command is empty');
-
-    const allowed = this.allowlist.some((entry) => entry.toLowerCase() === command.toLowerCase());
-    if (!allowed) {
-      throw new Error(`Command "${command}" is not in CMD_ALLOWLIST`);
-    }
 
     await new Promise<void>((resolve, reject) => {
       const child = spawn('cmd.exe', ['/d', '/s', '/c', command], {
